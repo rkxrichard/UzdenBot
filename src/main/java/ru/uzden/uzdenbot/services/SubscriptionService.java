@@ -28,7 +28,7 @@ public class SubscriptionService {
     @Transactional
     public Subscription extendSubscription(User user, int days) {
 
-        LocalDateTime now = LocalDateTime.now(); // бизнес-время
+        LocalDateTime now = LocalDateTime.now();
         Instant createdAt = Instant.now();
 
         // Проверка активной подписки

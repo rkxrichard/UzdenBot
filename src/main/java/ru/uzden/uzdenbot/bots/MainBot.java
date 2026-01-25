@@ -8,7 +8,10 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import ru.uzden.uzdenbot.entities.Subscription;
+import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.services.BotMenuService;
+import ru.uzden.uzdenbot.services.SubscriptionService;
 import ru.uzden.uzdenbot.services.UserService;
 
 @Slf4j
@@ -17,17 +20,19 @@ public class MainBot extends TelegramLongPollingBot {
 
     private final BotMenuService botMenuService;
     private final UserService userService;
+    private final SubscriptionService subscriptionService;
 
     private final String token;
     private final String username;
 
     @Autowired
     public MainBot(
-            BotMenuService botMenuService, UserService userService,
+            BotMenuService botMenuService, UserService userService, SubscriptionService subscriptionService,
             @Value("${telegram.bot.token}") String token,
             @Value("${telegram.bot.username}")String username) {
         this.botMenuService = botMenuService;
         this.userService = userService;
+        this.subscriptionService = subscriptionService;
         this.token = token;
         this.username = username;
     }
@@ -62,7 +67,11 @@ public class MainBot extends TelegramLongPollingBot {
                 Long chatId = cq.getMessage().getChatId();
 
                 switch (data) {
-                    case "MENU_SUBSCRIPTION" -> execute(simpleMessage(chatId,"subscription menu"));
+                    case "MENU_SUBSCRIPTION" -> {
+                        User user = userService.registerOrUpdate(cq.getFrom());
+                        boolean active = subscriptionService.hasActiveSubscription(user);
+                        execute(simpleMessage(chatId, active ? "✅ Подписка активна" : "❌ Подписки нет"));
+                    }
                     case "MENU_PROFILE" -> execute(simpleMessage(chatId,"Profile menu"));
                     case "MENU_HELP" -> execute(simpleMessage(chatId,"Help menu"));
                     case "MENU_BACK" -> execute(simpleMessage(chatId,"Back menu"));
