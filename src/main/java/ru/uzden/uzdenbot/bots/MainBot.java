@@ -1,5 +1,6 @@
 package ru.uzden.uzdenbot.bots;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -8,21 +9,25 @@ import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import ru.uzden.uzdenbot.services.BotMenuService;
+import ru.uzden.uzdenbot.services.UserService;
 
+@Slf4j
 @Component
 public class MainBot extends TelegramLongPollingBot {
 
-    @Autowired
-    private BotMenuService botMenuService;
+    private final BotMenuService botMenuService;
+    private final UserService userService;
 
     private final String token;
     private final String username;
 
+    @Autowired
     public MainBot(
-            BotMenuService botMenuService,
-                   @Value("${telegram.bot.token}") String token,
-                   @Value("${telegram.bot.username}")String username) {
+            BotMenuService botMenuService, UserService userService,
+            @Value("${telegram.bot.token}") String token,
+            @Value("${telegram.bot.username}")String username) {
         this.botMenuService = botMenuService;
+        this.userService = userService;
         this.token = token;
         this.username = username;
     }
@@ -45,6 +50,7 @@ public class MainBot extends TelegramLongPollingBot {
                 Long chatId = update.getMessage().getChatId();
 
                 if ("/start".equals(text)) {
+                    userService.registerOrUpdate(update.getMessage().getFrom());
                     execute(botMenuService.mainMenu(chatId));
                     return;
                 }
@@ -67,7 +73,7 @@ public class MainBot extends TelegramLongPollingBot {
                 execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Ошибка в боте: ", e);
         }
 
     }

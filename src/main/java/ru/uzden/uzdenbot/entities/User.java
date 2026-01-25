@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 
 import java.beans.ConstructorProperties;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -24,4 +26,7 @@ public class User {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    private List<Subscription> subscriptions = new ArrayList<>();
 }

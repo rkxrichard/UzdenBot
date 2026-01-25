@@ -17,7 +17,7 @@ public class Subscription {
 
     @JoinColumn(name = "user_id", nullable = false)
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    User user;
+    private User user;
 
     @Column(name = "start_date")
     private LocalDateTime startDate;
