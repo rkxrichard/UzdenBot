@@ -19,7 +19,11 @@ public class UserService {
         Long telegramId = tgUser.getId();
         String username = tgUser.getUserName();
 
-        return userRepository.findUserById(telegramId)
+        if (userRepository.findUserByTelegramId(telegramId).isPresent()) {
+
+        }
+
+        return userRepository.findUserByTelegramId(telegramId)
                 .map(u -> {
                     if (username != null && !username.equals(u.getUsername())) {
                         u.setUsername(username);

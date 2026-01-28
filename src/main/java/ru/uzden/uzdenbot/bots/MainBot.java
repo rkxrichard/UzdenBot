@@ -7,9 +7,12 @@ import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import ru.uzden.uzdenbot.entities.Subscription;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.repositories.UserRepository;
 import ru.uzden.uzdenbot.services.BotMenuService;
 import ru.uzden.uzdenbot.services.SubscriptionService;
 import ru.uzden.uzdenbot.services.UserService;
@@ -21,18 +24,20 @@ public class MainBot extends TelegramLongPollingBot {
     private final BotMenuService botMenuService;
     private final UserService userService;
     private final SubscriptionService subscriptionService;
+    private final UserRepository userRepository;
 
     private final String token;
     private final String username;
 
     @Autowired
     public MainBot(
-            BotMenuService botMenuService, UserService userService, SubscriptionService subscriptionService,
+            BotMenuService botMenuService, UserService userService, SubscriptionService subscriptionService, UserRepository userRepository,
             @Value("${telegram.bot.token}") String token,
             @Value("${telegram.bot.username}")String username) {
         this.botMenuService = botMenuService;
         this.userService = userService;
         this.subscriptionService = subscriptionService;
+        this.userRepository = userRepository;
         this.token = token;
         this.username = username;
     }
@@ -65,32 +70,55 @@ public class MainBot extends TelegramLongPollingBot {
                 var cq = update.getCallbackQuery();
                 String data = update.getCallbackQuery().getData();
                 Long chatId = cq.getMessage().getChatId();
+                Integer messageId = cq.getMessage().getMessageId();
 
                 switch (data) {
-                    case "MENU_SUBSCRIPTION" -> {
-                        User user = userService.registerOrUpdate(cq.getFrom());
-                        boolean active = subscriptionService.hasActiveSubscription(user);
-                        execute(simpleMessage(chatId, active ? "✅ Подписка активна" : "❌ Подписки нет"));
-                    }
-                    case "MENU_PROFILE" -> execute(simpleMessage(chatId,"Profile menu"));
-                    case "MENU_HELP" -> execute(simpleMessage(chatId,"Help menu"));
-                    case "MENU_BACK" -> execute(simpleMessage(chatId,"Back menu"));
+                    case "MENU_SUBSCRIPTION" -> editFromSendMessage(botMenuService.subscriptionMenu(chatId), chatId, messageId);
+//                    case "MENU_HELP" -> editFromSendMessage(simpleMessage(chatId,"Help menu"),chatId,messageId);
+                    case "MENU_BACK" -> editFromSendMessage(botMenuService.mainMenu(chatId), chatId, messageId);
 
-                    case "MENU_BUY" -> execute(simpleMessage(chatId,"Buy menu"));
-                    case "MENU_STATUS" -> execute(simpleMessage(chatId,"Status menu"));
+                    case "MENU_BUY" -> {
+                        // ПОТОМ ДОБАВИТЬ РЕАЛИЗАЦИЮ СМЕНЫ (КУПИТЬ/ПРОДЛИТЬ)
+                        // да и впринципе добавить реаллизацию оплаты через Юкассу
+                        User user = userService.registerOrUpdate(cq.getFrom());
+                        subscriptionService.extendSubscription(user, 30);
+                        execute(simpleMessage(chatId,"✅ Подписка продлена на 30 дней"));
+                        execute(botMenuService.subscriptionMenu(chatId));
+                    }
+//                    case "MENU_STATUS" -> {
+//                        User user = userService.registerOrUpdate(cq.getFrom());
+//                        var activeSub = subscriptionService.getActiveSubscription(user);
+//                        if (activeSub.isPresent()) {
+//                            long daysLeft = subscriptionService.getDaysLeft(activeSub.get());
+//                            execute(simpleMessage(chatId, "✅ Подписка активна\nОсталось дней: " + daysLeft));
+//                        } else {
+//                            execute(simpleMessage(chatId, "❌ Подписки нет"));
+//                        }
+//                    }
                 }
                 execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             }
         } catch (Exception e) {
             log.error("Ошибка в боте: ", e);
         }
-
     }
 
+    // ОТПРАВКА ПРОСТЕНЬКОГО СООБЩЕНИЯ
     private SendMessage simpleMessage(Long chatId, String text) {
         return SendMessage.builder()
                 .chatId(chatId.toString())
                 .text(text)
                 .build();
     }
+
+    // ИЗМЕНЕНИЕ СООБЩЕНИЯ
+    private void editFromSendMessage(SendMessage sm, Long chatId, Integer messageId) throws Exception {
+        execute(EditMessageText.builder()
+                .chatId(chatId.toString())
+                .messageId(messageId)
+                .text(sm.getText())
+                .replyMarkup((InlineKeyboardMarkup) sm.getReplyMarkup())
+                .build());
+    }
+
 }
