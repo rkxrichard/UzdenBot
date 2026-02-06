@@ -25,9 +25,9 @@ public class ThreeXuiClient {
     private volatile String authCookie;
     private final ReentrantLock loginLock = new ReentrantLock();
 
-    // В разных форках/версиях могут отличаться пути для getInbound/del/update
+    // В разных форках/версиях могут отличаться пути для getInbound/del/update.
     // addClient обычно стабилен.
-    private static final String LOGIN_PATH = "/login/";
+    private static final String LOGIN_PATH = "/login";
     private static final String ADD_CLIENT_PATH = "/panel/api/inbounds/addClient";
 
     // Попробуем несколько вариантов get inbound
@@ -60,6 +60,18 @@ public class ThreeXuiClient {
                 .baseUrl(Objects.requireNonNull(props.baseUrl(), "xui.base-url is required"))
                 .requestFactory(rf)
                 .build();
+    }
+
+    private String url(String path) {
+        String bp = props.basePath();
+        if (bp == null) bp = "";
+        bp = bp.trim();
+        if (!bp.isEmpty() && !bp.startsWith("/")) bp = "/" + bp;
+        if (bp.endsWith("/")) bp = bp.substring(0, bp.length() - 1);
+
+        String p = (path == null) ? "" : path.trim();
+        if (!p.startsWith("/")) p = "/" + p;
+        return bp + p;
     }
 
 
@@ -158,22 +170,38 @@ public class ThreeXuiClient {
         try {
             if (authCookie != null) return;
 
-            Map<String, Object> body = Map.of(
+            // 3x-ui forks differ: some expect JSON, some expect form-urlencoded.
+            // We'll try JSON first, then fallback to form.
+
+            var jsonBody = Map.of(
                     "username", props.username(),
                     "password", props.password()
             );
 
             var resp = rest.post()
-                    .uri(LOGIN_PATH)
+                    .uri(url(LOGIN_PATH))
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
-                    .body(body)
+                    .body(jsonBody)
                     .retrieve()
                     .toEntity(String.class);
 
             String setCookie = resp.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
             if (setCookie == null || setCookie.isBlank()) {
-                throw new IllegalStateException("3x-ui login failed: Set-Cookie not found");
+                // fallback: form
+                String form = "username=" + encode(props.username()) + "&password=" + encode(props.password());
+                resp = rest.post()
+                        .uri(url(LOGIN_PATH))
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .body(form)
+                        .retrieve()
+                        .toEntity(String.class);
+                setCookie = resp.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+            }
+
+            if (setCookie == null || setCookie.isBlank()) {
+                throw new IllegalStateException("3x-ui login failed: Set-Cookie not found. status=" + resp.getStatusCode() + ", body=" + resp.getBody());
             }
 
             // Берём первый cookie до ';'
@@ -220,7 +248,7 @@ public class ThreeXuiClient {
     private void postWithAuth(String path, Object body) {
         try {
             rest.post()
-                    .uri(path)
+                    .uri(url(path))
                     .header(HttpHeaders.COOKIE, authCookie)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
@@ -239,7 +267,7 @@ public class ThreeXuiClient {
     private String getWithAuth(String path) {
         try {
             return rest.get()
-                    .uri(path)
+                    .uri(url(path))
                     .header(HttpHeaders.COOKIE, authCookie)
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
@@ -262,5 +290,10 @@ public class ThreeXuiClient {
     @FunctionalInterface
     private interface RunnableWithException {
         void run() throws Exception;
+    }
+
+    private static String encode(String s) {
+        if (s == null) return "";
+        return java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8);
     }
 }

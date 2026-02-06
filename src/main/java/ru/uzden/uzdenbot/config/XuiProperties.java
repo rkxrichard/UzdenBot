@@ -5,10 +5,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "xui")
 public record XuiProperties(
         String baseUrl,
+        String basePath,
         String username,
         String password,
         long inboundId,
         String publicHost,
         int publicPort,
-        String linkTag
+        String linkTag,
+        String realityPublicKey
 ) {}
