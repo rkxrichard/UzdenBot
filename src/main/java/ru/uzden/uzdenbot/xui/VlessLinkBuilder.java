@@ -98,12 +98,23 @@ public class VlessLinkBuilder {
                 sni = serverNames.get(0).asText(host);
             }
 
-            // shortIds[0] -> sid (иногда лежит в reality.settings.shortIds)
+            // shortIds -> sid
+            // На практике многие клиенты ожидают длину shortId 8/16 hex. Поэтому выбираем первый,
+            // который достаточно длинный (>=8), иначе берём самый первый.
             String sid = "";
             JsonNode shortIds = reality.path("shortIds");
             if (!shortIds.isArray()) shortIds = realitySettings.path("shortIds");
             if (shortIds.isArray() && shortIds.size() > 0) {
-                sid = shortIds.get(0).asText("");
+                for (JsonNode n : shortIds) {
+                    String v = blankToNull(n.asText(""));
+                    if (v != null && v.length() >= 8) {
+                        sid = v;
+                        break;
+                    }
+                }
+                if (sid.isBlank()) {
+                    sid = shortIds.get(0).asText("");
+                }
             }
             if (sid == null || sid.isBlank()) {
                 // fallback regex: берём первый shortId из массива
@@ -160,6 +171,7 @@ public class VlessLinkBuilder {
                     .append(":")
                     .append(port)
                     .append("?type=tcp")
+                    .append("&headerType=none")
                     .append("&security=reality")
                     .append("&encryption=none")
                     .append("&flow=").append(enc(flow))
@@ -183,10 +195,14 @@ public class VlessLinkBuilder {
 
     private static String regexExtract(String text, String pattern) {
         if (text == null || text.isBlank()) return null;
-        Pattern p = Pattern.compile(pattern, Pattern.MULTILINE | Pattern.DOTALL);
-        Matcher m = p.matcher(text);
-        if (m.find()) {
-            return blankToNull(m.group(1));
+        try {
+            Pattern p = Pattern.compile(pattern, Pattern.MULTILINE | Pattern.DOTALL);
+            Matcher m = p.matcher(text);
+            if (m.find()) {
+                return blankToNull(m.group(1));
+            }
+        } catch (Exception ignored) {
+            // если regex некорректен — просто считаем, что не нашли
         }
         return null;
     }
