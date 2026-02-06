@@ -15,12 +15,11 @@ import ru.uzden.uzdenbot.config.XuiProperties;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 @Slf4j
 @Component
 public class ThreeXuiClient {
-
-    private static final com.fasterxml.jackson.databind.ObjectMapper OM = new com.fasterxml.jackson.databind.ObjectMapper();
 
     private final RestClient rest;
     private final XuiProperties props;
@@ -29,18 +28,12 @@ public class ThreeXuiClient {
     private volatile String authCookie;
     private final ReentrantLock loginLock = new ReentrantLock();
 
-    // В разных форках/версиях могут отличаться пути для getInbound/del/update.
-    // addClient обычно стабилен.
     private static final String LOGIN_PATH = "/login";
     private static final String ADD_CLIENT_PATH = "/panel/api/inbounds/addClient";
 
-    // Попробуем несколько вариантов get inbound
     private static final List<String> GET_INBOUND_CANDIDATES = List.of(
             "/panel/api/inbounds/get/%d",
             "/panel/api/inbounds/get/%d/",
-
-            // иногда бывает list + фильтрация, но это уже другой код
-            // оставляем как кандидаты, если у тебя окажется так:
             "/panel/api/inbounds/get/%d?full=true"
     );
 
@@ -49,14 +42,10 @@ public class ThreeXuiClient {
             "/panel/api/inbounds/list/"
     );
 
-    // update enable (часто так)
     private static final List<String> UPDATE_CLIENT_CANDIDATES = List.of(
             "/panel/api/inbounds/updateClient/%s",
             "/panel/api/inbounds/updateClient/%s/"
     );
-
-    // disable через updateClient: enable=false
-    // (удаление можешь добавить позже, когда подтвердим endpoint)
 
     public ThreeXuiClient(RestClient.Builder builder, XuiProperties props) {
         this.props = props;
@@ -83,80 +72,60 @@ public class ThreeXuiClient {
         return bp + p;
     }
 
-
-
     /* ============================ public API ============================ */
 
+    /**
+     * Добавляет клиента в inbound через API 3x-ui. Важно: в 3x-ui client.id ДОЛЖЕН быть валидным UUID.
+     * Делает запрос ровно как web-панель: application/x-www-form-urlencoded с полями id и settings.
+     */
     public void addClient(long inboundId, UUID clientUuid, String email) {
         ensureLoggedIn();
 
-        // В твоей сборке (2.8.9) фронт делает именно так:
-        // POST {basePath}/panel/api/inbounds/addClient
-        // Content-Type: application/x-www-form-urlencoded
-        // body: id=<inboundId>&settings=<json>
-        // где settings обычно содержит объект с clients: [{...}]
-        // Делаем payload максимально похожим на то, что шлёт web‑панель, чтобы 3x-ui
-        // точно создал клиента (в разных форках есть валидации на поля).
-        Map<String, Object> client = new LinkedHashMap<>();
-        client.put("id", clientUuid.toString());
-        client.put("security", "");
-        client.put("password", "");
-        client.put("flow", "xtls-rprx-vision");
-        client.put("email", email);
-        client.put("limitIp", 0);
-        client.put("totalGB", 0);
-        client.put("expiryTime", 0);
-        client.put("enable", true);
-        client.put("tgId", 0);
-        client.put("subId", randomSubId());
-        client.put("comment", "");
-        client.put("reset", 0);
-
-        Map<String, Object> settings = new LinkedHashMap<>();
-        settings.put("clients", List.of(client));
-
-        String settingsJson;
-        try {
-            settingsJson = OM.writeValueAsString(settings);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to serialize addClient settings", e);
-        }
+        // settings={"clients":[{...}]}
+        String subId = randomSubId(16);
+        String settingsJson = buildAddClientSettingsJson(clientUuid.toString(), email, subId);
 
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("id", String.valueOf(inboundId));
         form.add("settings", settingsJson);
 
-        postFormWithAuth(ADD_CLIENT_PATH, form);
+        String body = postFormWithAuth(ADD_CLIENT_PATH, form);
+        ApiEnvelope env = ApiEnvelope.parse(body);
+
+        if (!env.success) {
+            throw new IllegalStateException("3x-ui addClient failed: " + (env.msg == null ? body : env.msg));
+        }
+
+        // verify: реально ли клиент появился в inbound
+        if (!clientExistsInInbound(inboundId, clientUuid.toString(), email)) {
+            throw new IllegalStateException("3x-ui addClient returned success but client not persisted (uuid/email not found in inbound)");
+        }
     }
 
     public void disableClient(long inboundId, UUID clientUuid) {
         ensureLoggedIn();
 
-        // Во многих 3x-ui updateClient принимает payload inboundId + client с enable=false
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("inboundId", inboundId);
+        // минимальный JSON (без ObjectMapper), достаточный для updateClient в большинстве сборок
+        String bodyJson = "{"
+                + "\"inboundId\":" + inboundId + ","
+                + "\"client\":{\"id\":\"" + escapeJson(clientUuid.toString()) + "\",\"enable\":false}"
+                + "}";
 
-        Map<String, Object> client = new LinkedHashMap<>();
-        client.put("id", clientUuid.toString());
-        client.put("enable", false);
-
-        body.put("client", client);
-
-        // Попробуем несколько вариантов endpoint
         HttpClientErrorException last = null;
         for (String pattern : UPDATE_CLIENT_CANDIDATES) {
             String path = String.format(pattern, clientUuid);
             try {
-                postWithAuth(path, body);
+                postJsonWithAuth(path, bodyJson);
                 return;
             } catch (HttpClientErrorException e) {
                 last = e;
-                // если 401/403 — перелогинимся и повторим на этом же path
                 if (isAuthError(e)) {
-                    reloginAndRetry(() -> postWithAuth(path, body));
+                    reloginAndRetry(() -> {
+                        postJsonWithAuth(path, bodyJson);
+                        return "";
+                    });
                     return;
                 }
-                // иначе пробуем следующий кандидат
             }
         }
         if (last != null) throw last;
@@ -164,7 +133,7 @@ public class ThreeXuiClient {
     }
 
     /**
-     * Возвращает inbound JSON (как строку). Именно этот JSON ты потом парсишь в VlessLinkBuilder.
+     * Возвращает inbound JSON (как строку) без envelope-обертки.
      */
     public String getInbound(long inboundId) {
         ensureLoggedIn();
@@ -175,7 +144,6 @@ public class ThreeXuiClient {
             try {
                 String body = getWithAuth(path);
                 String unwrapped = unwrapObjIfNeeded(body);
-                // если эндпоинт вернул неполный объект (без streamSettings) — попробуем list
                 if (!looksLikeFullInbound(unwrapped)) {
                     String fromList = tryFindInboundFromList(inboundId);
                     if (fromList != null) return fromList;
@@ -184,7 +152,6 @@ public class ThreeXuiClient {
             } catch (HttpClientErrorException e) {
                 last = e;
                 if (isAuthError(e)) {
-                    // ре-логин и повтор именно этого path
                     String body = reloginAndRetry(() -> getWithAuth(path));
                     String unwrapped = unwrapObjIfNeeded(body);
                     if (!looksLikeFullInbound(unwrapped)) {
@@ -193,17 +160,26 @@ public class ThreeXuiClient {
                     }
                     return unwrapped;
                 }
-                // пробуем следующий кандидат
             }
         }
         if (last != null) throw last;
         throw new IllegalStateException("No getInbound endpoint candidates matched");
     }
 
+    /* ============================ helpers ============================ */
+
+    private boolean clientExistsInInbound(long inboundId, String uuid, String email) {
+        String inbound = getInbound(inboundId);
+        if (inbound == null) return false;
+
+        // settings и streamSettings в 3x-ui часто лежат строкой, поэтому просто проверяем наличие uuid/email в тексте
+        String hay = inbound;
+        return hay.contains(uuid) && (email == null || email.isBlank() || hay.contains(email));
+    }
+
     private static boolean looksLikeFullInbound(String inboundJson) {
         if (inboundJson == null) return false;
         String t = inboundJson.trim();
-        // быстрый хак: полная запись обычно содержит streamSettings или хотя бы realitySettings
         return t.contains("\"streamSettings\"") || t.contains("\"realitySettings\"");
     }
 
@@ -212,235 +188,315 @@ public class ThreeXuiClient {
             try {
                 String body = getWithAuth(path);
                 String unwrapped = unwrapObjIfNeeded(body);
-                // list обычно: {"success":true,"obj":[{...},{...}]}
-                var node = OM.readTree(unwrapped);
-                if (node.isArray()) {
-                    for (var it : node) {
-                        if (it != null && it.has("id") && it.get("id").asLong() == inboundId) {
-                            return it.toString();
-                        }
+                // list: {"success":true,"obj":[{...},{...}]}
+                String arr = unwrapped == null ? null : unwrapped.trim();
+                if (arr == null || !arr.startsWith("[")) continue;
+
+                // грубый поиск по "id":<inboundId>
+                // найдём объект где "id": inboundId и вытащим его JSON
+                int idx = indexOfId(arr, inboundId);
+                if (idx >= 0) {
+                    // от idx назад до '{' и вперёд до matching '}'
+                    int objStart = arr.lastIndexOf('{', idx);
+                    if (objStart >= 0) {
+                        String obj = JsonMini.extractJsonValue(arr, objStart);
+                        if (obj != null && obj.trim().startsWith("{")) return obj;
                     }
                 }
             } catch (Exception ignore) {
-                // пробуем следующий кандидат
             }
         }
         return null;
     }
 
+    private static int indexOfId(String jsonArray, long id) {
+        // ищем "id":<id> или "id": <id>
+        String needle = "\"id\":" + id;
+        int i = jsonArray.indexOf(needle);
+        if (i >= 0) return i;
+        needle = "\"id\": " + id;
+        return jsonArray.indexOf(needle);
+    }
+
     /**
-     * 3x-ui API часто возвращает обёртку вида: {"success":true,"obj":{...}}
-     * или {"success":true,"data":{...}}.
-     * Для построения ссылки нам нужен именно объект inbound.
+     * 3x-ui API часто возвращает envelope: {"success":true,"obj":{...}}.
+     * Мы вытаскиваем obj/data/inbound если они есть.
      */
     private static String unwrapObjIfNeeded(String body) {
         if (body == null || body.isBlank()) return body;
         String t = body.trim();
         if (!t.startsWith("{") && !t.startsWith("[")) return body;
-        try {
-            com.fasterxml.jackson.databind.JsonNode root = OM.readTree(t);
-            // наиболее частый кейс
-            com.fasterxml.jackson.databind.JsonNode obj = root.get("obj");
-            if (obj != null && !obj.isNull() && !obj.isMissingNode()) {
-                return obj.toString();
-            }
-            // некоторые форки используют data
-            com.fasterxml.jackson.databind.JsonNode data = root.get("data");
-            if (data != null && !data.isNull() && !data.isMissingNode()) {
-                return data.toString();
-            }
-            // иногда inbound лежит под inbound
-            com.fasterxml.jackson.databind.JsonNode inbound = root.get("inbound");
-            if (inbound != null && !inbound.isNull() && !inbound.isMissingNode()) {
-                return inbound.toString();
-            }
-        } catch (Exception ignore) {
-            // если не парсится — вернём как есть
-        }
+
+        // если это array — уже ок
+        if (t.startsWith("[")) return t;
+
+        // envelope: попробуем obj, data, inbound
+        String obj = JsonMini.extractFieldValue(t, "obj");
+        if (obj != null) return obj;
+        String data = JsonMini.extractFieldValue(t, "data");
+        if (data != null) return data;
+        String inbound = JsonMini.extractFieldValue(t, "inbound");
+        if (inbound != null) return inbound;
+
         return body;
     }
 
     /* ============================ auth ============================ */
 
     private void ensureLoggedIn() {
-        if (authCookie != null) return;
-        login();
-    }
+        if (authCookie != null && !authCookie.isBlank()) return;
 
-    private void login() {
         loginLock.lock();
         try {
-            if (authCookie != null) return;
-
-            // 3x-ui forks differ: some expect JSON, some expect form-urlencoded.
-            // We'll try JSON first, then fallback to form.
-
-            var jsonBody = Map.of(
-                    "username", props.username(),
-                    "password", props.password()
-            );
-
-            var resp = rest.post()
-                    .uri(url(LOGIN_PATH))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(jsonBody)
-                    .retrieve()
-                    .toEntity(String.class);
-
-            String setCookie = resp.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
-            if (setCookie == null || setCookie.isBlank()) {
-                // fallback: form
-                String form = "username=" + encode(props.username()) + "&password=" + encode(props.password());
-                resp = rest.post()
-                        .uri(url(LOGIN_PATH))
-                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                        .accept(MediaType.APPLICATION_JSON)
-                        .body(form)
-                        .retrieve()
-                        .toEntity(String.class);
-                setCookie = resp.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
-            }
-
-            if (setCookie == null || setCookie.isBlank()) {
-                throw new IllegalStateException("3x-ui login failed: Set-Cookie not found. status=" + resp.getStatusCode() + ", body=" + resp.getBody());
-            }
-
-            // Берём первый cookie до ';'
-            authCookie = setCookie.split(";", 2)[0];
-            log.info("3x-ui login ok, cookieName={}", authCookie.split("=", 2)[0]);
-
+            if (authCookie != null && !authCookie.isBlank()) return;
+            doLogin();
         } finally {
             loginLock.unlock();
         }
     }
 
-    private <T> T reloginAndRetry(SupplierWithException<T> supplier) {
-        // сбросим cookie и перелогинимся
-        authCookie = null;
-        login();
-        try {
-            return supplier.get();
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
-    }
+    private void doLogin() {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("username", Objects.requireNonNull(props.username(), "xui.username is required"));
+        form.add("password", Objects.requireNonNull(props.password(), "xui.password is required"));
+        // twoFactorCode отсутствует — оставляем пустым (если 2FA выключен)
+        form.add("twoFactorCode", "");
 
-    private void reloginAndRetry(RunnableWithException runnable) {
-        authCookie = null;
-        login();
-        try {
-            runnable.run();
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
+        var resp = rest.post()
+                .uri(url(LOGIN_PATH))
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
+                .retrieve()
+                .toEntity(String.class);
+
+        String setCookie = resp.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        if (setCookie == null || setCookie.isBlank()) {
+            // некоторые форки отдают успех/ошибку в body при 200
+            String body = resp.getBody();
+            ApiEnvelope env = ApiEnvelope.parse(body);
+            if (env.msg != null && !env.msg.isBlank()) {
+                throw new IllegalStateException("3x-ui login failed: " + env.msg);
+            }
+            throw new IllegalStateException("3x-ui login failed: Set-Cookie not found");
         }
+
+        // возьмем только cookie до ';'
+        String cookie = setCookie.split(";", 2)[0].trim();
+        this.authCookie = cookie;
+        log.info("3x-ui login ok, cookie name={}", cookie.contains("=") ? cookie.substring(0, cookie.indexOf('=')) : cookie);
     }
 
     private boolean isAuthError(HttpClientErrorException e) {
-        HttpStatus s = (HttpStatus) e.getStatusCode();
-        return s == HttpStatus.UNAUTHORIZED || s == HttpStatus.FORBIDDEN;
+        return e.getStatusCode() == HttpStatus.UNAUTHORIZED || e.getStatusCode() == HttpStatus.FORBIDDEN;
     }
 
-    /* ============================ HTTP helpers ============================ */
-
-    private void postWithAuth(String path, Object body) {
+    private <T> T reloginAndRetry(Supplier<T> call) {
+        loginLock.lock();
         try {
-            rest.post()
-                    .uri(url(path))
-                    .header(HttpHeaders.COOKIE, cookieHeader())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .toBodilessEntity();
-        } catch (HttpClientErrorException e) {
-            if (isAuthError(e)) {
-                reloginAndRetry(() -> postWithAuth(path, body));
-                return;
-            }
-            throw e;
+            // сбросим и перелогинимся
+            this.authCookie = null;
+            doLogin();
+            return call.get();
+        } finally {
+            loginLock.unlock();
         }
     }
+
+    /* ============================ http ============================ */
 
     private String getWithAuth(String path) {
-        try {
-            return rest.get()
-                    .uri(url(path))
-                    .header(HttpHeaders.COOKIE, cookieHeader())
-                    .accept(MediaType.APPLICATION_JSON)
-                    .retrieve()
-                    .body(String.class);
-        } catch (HttpClientErrorException e) {
-            if (isAuthError(e)) {
-                return reloginAndRetry(() -> getWithAuth(path));
-            }
-            throw e;
+        return rest.get()
+                .uri(url(path))
+                .header(HttpHeaders.COOKIE, authCookie)
+                .retrieve()
+                .body(String.class);
+    }
+
+    private String postFormWithAuth(String path, MultiValueMap<String, String> form) {
+        return rest.post()
+                .uri(url(path))
+                .header(HttpHeaders.COOKIE, authCookie)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
+                .retrieve()
+                .body(String.class);
+    }
+
+    private void postJsonWithAuth(String path, String jsonBody) {
+        rest.post()
+                .uri(url(path))
+                .header(HttpHeaders.COOKIE, authCookie)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(jsonBody)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /* ============================ json mini ============================ */
+
+    private static final class ApiEnvelope {
+        final boolean success;
+        final String msg;
+
+        private ApiEnvelope(boolean success, String msg) {
+            this.success = success;
+            this.msg = msg;
+        }
+
+        static ApiEnvelope parse(String body) {
+            if (body == null) return new ApiEnvelope(false, null);
+            String t = body.trim();
+            if (!t.startsWith("{")) return new ApiEnvelope(true, null); // не JSON — считаем успешным
+            String s = JsonMini.extractFieldValue(t, "success");
+            boolean ok = "true".equalsIgnoreCase(trimQuotes(s));
+            String msg = trimQuotes(JsonMini.extractFieldValue(t, "msg"));
+            return new ApiEnvelope(ok, msg);
         }
     }
 
-    /* ============================ small functional ============================ */
+    private static final class JsonMini {
 
-    @FunctionalInterface
-    private interface SupplierWithException<T> {
-        T get() throws Exception;
-    }
+        static String extractFieldValue(String jsonObject, String field) {
+            if (jsonObject == null) return null;
+            String t = jsonObject.trim();
+            if (!t.startsWith("{")) return null;
 
-    @FunctionalInterface
-    private interface RunnableWithException {
-        void run() throws Exception;
-    }
+            int idx = indexOfField(t, field);
+            if (idx < 0) return null;
 
-    private static String encode(String s) {
-        if (s == null) return "";
-        return java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8);
-    }
+            int colon = t.indexOf(':', idx);
+            if (colon < 0) return null;
 
-    private static String randomSubId() {
-        // субайди в 3x-ui — это просто строка; в UI обычно 16-20 символов.
-        // Главное — уникальность в рамках inbound.
-        return java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-    }
+            int valStart = colon + 1;
+            while (valStart < t.length() && Character.isWhitespace(t.charAt(valStart))) valStart++;
 
-    private void postFormWithAuth(String path, MultiValueMap<String, String> form) {
-        try {
-            String body = rest.post()
-                    .uri(url(path))
-                    .header(HttpHeaders.COOKIE, cookieHeader())
-                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(form)
-                    .retrieve()
-                    .body(String.class);
+            return extractJsonValue(t, valStart);
+        }
 
-            // 3x-ui часто отвечает 200 OK даже при ошибке, но success=false
-            if (body != null && body.trim().startsWith("{")) {
-                Map<String, Object> m = OM.readValue(body, Map.class);
-                Object success = m.get("success");
-                if (success instanceof Boolean b && !b) {
-                    throw new IllegalStateException("3x-ui API error: " + m.get("msg"));
+        static int indexOfField(String json, String field) {
+            // ищем "field"
+            String needle = "\"" + field + "\"";
+            int i = json.indexOf(needle);
+            if (i < 0) return -1;
+            return i + needle.length();
+        }
+
+        /**
+         * Возвращает JSON-значение начиная с pos (может быть объект, массив, строка, число, true/false/null).
+         */
+        static String extractJsonValue(String s, int pos) {
+            if (s == null || pos < 0 || pos >= s.length()) return null;
+            int i = pos;
+            while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
+            if (i >= s.length()) return null;
+
+            char c = s.charAt(i);
+            if (c == '"') {
+                int end = findStringEnd(s, i);
+                if (end < 0) return null;
+                return s.substring(i, end + 1);
+            }
+            if (c == '{' || c == '[') {
+                int end = findMatchingBracket(s, i);
+                if (end < 0) return null;
+                return s.substring(i, end + 1);
+            }
+            // primitive
+            int end = i;
+            while (end < s.length() && ",}\n\r\t".indexOf(s.charAt(end)) < 0) end++;
+            return s.substring(i, end).trim();
+        }
+
+        static int findStringEnd(String s, int startQuote) {
+            boolean esc = false;
+            for (int i = startQuote + 1; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (esc) {
+                    esc = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    esc = true;
+                    continue;
+                }
+                if (c == '"') return i;
+            }
+            return -1;
+        }
+
+        static int findMatchingBracket(String s, int start) {
+            char open = s.charAt(start);
+            char close = (open == '{') ? '}' : ']';
+            int depth = 0;
+            boolean inStr = false;
+            boolean esc = false;
+
+            for (int i = start; i < s.length(); i++) {
+                char c = s.charAt(i);
+
+                if (inStr) {
+                    if (esc) {
+                        esc = false;
+                        continue;
+                    }
+                    if (c == '\\') {
+                        esc = true;
+                        continue;
+                    }
+                    if (c == '"') {
+                        inStr = false;
+                    }
+                    continue;
+                }
+
+                if (c == '"') {
+                    inStr = true;
+                    continue;
+                }
+                if (c == open) depth++;
+                else if (c == close) {
+                    depth--;
+                    if (depth == 0) return i;
                 }
             }
-        } catch (HttpClientErrorException e) {
-            if (isAuthError(e)) {
-                reloginAndRetry(() -> postFormWithAuth(path, form));
-                return;
-            }
-            throw e;
-        } catch (IllegalStateException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException("3x-ui request failed", e);
+            return -1;
         }
     }
 
-    private String cookieHeader() {
-        // фронт панельки обычно шлёт ещё lang=ru-RU; это безопасно и иногда влияет на поведение.
-        if (authCookie == null || authCookie.isBlank()) return "lang=ru-RU";
-        if (authCookie.startsWith("lang=")) return authCookie;
-        return "lang=ru-RU; " + authCookie;
+    /* ============================ misc ============================ */
+
+    private static String randomSubId(int len) {
+        String alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+        var r = new java.security.SecureRandom();
+        var sb = new StringBuilder(len);
+        for (int i = 0; i < len; i++) sb.append(alphabet.charAt(r.nextInt(alphabet.length())));
+        return sb.toString();
+    }
+
+    private static String buildAddClientSettingsJson(String uuid, String email, String subId) {
+        // максимально похоже на то, что шлёт панель (минимально нужные поля)
+        return "{\"clients\":[{"
+                + "\"id\":\"" + escapeJson(uuid) + "\","
+                + "\"flow\":\"xtls-rprx-vision\","
+                + "\"email\":\"" + escapeJson(email) + "\","
+                + "\"limitIp\":0,"
+                + "\"totalGB\":0,"
+                + "\"expiryTime\":0,"
+                + "\"enable\":true,"
+                + "\"subId\":\"" + escapeJson(subId) + "\","
+                + "\"reset\":0"
+                + "}]}";
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\");
+    }
+
+    private static String trimQuotes(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")) return t.substring(1, t.length() - 1);
+        return t;
     }
 }
