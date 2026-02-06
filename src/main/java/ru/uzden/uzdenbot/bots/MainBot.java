@@ -16,6 +16,7 @@ import ru.uzden.uzdenbot.repositories.UserRepository;
 import ru.uzden.uzdenbot.services.BotMenuService;
 import ru.uzden.uzdenbot.services.SubscriptionService;
 import ru.uzden.uzdenbot.services.UserService;
+import ru.uzden.uzdenbot.services.VpnKeyService;
 
 @Slf4j
 @Component
@@ -24,6 +25,7 @@ public class MainBot extends TelegramLongPollingBot {
     private final BotMenuService botMenuService;
     private final UserService userService;
     private final SubscriptionService subscriptionService;
+    private final VpnKeyService vpnKeyService;
     private final UserRepository userRepository;
 
     private final String token;
@@ -31,12 +33,17 @@ public class MainBot extends TelegramLongPollingBot {
 
     @Autowired
     public MainBot(
-            BotMenuService botMenuService, UserService userService, SubscriptionService subscriptionService, UserRepository userRepository,
+            BotMenuService botMenuService,
+            UserService userService,
+            SubscriptionService subscriptionService,
+            VpnKeyService vpnKeyService,
+            UserRepository userRepository,
             @Value("${telegram.bot.token}") String token,
             @Value("${telegram.bot.username}")String username) {
         this.botMenuService = botMenuService;
         this.userService = userService;
         this.subscriptionService = subscriptionService;
+        this.vpnKeyService = vpnKeyService;
         this.userRepository = userRepository;
         this.token = token;
         this.username = username;
@@ -86,8 +93,33 @@ public class MainBot extends TelegramLongPollingBot {
                         execute(botMenuService.subscriptionMenu(chatId));
                     }
                     case "MENU_GET_KEY" -> {
-                        // добавить реализацию выдачи ключа
+                        User user = userService.registerOrUpdate(cq.getFrom());
 
+                        if (!subscriptionService.hasActiveSubscription(user)) {
+                            // Можно сделать alert, но проще — сообщением в чат
+                            execute(simpleMessage(chatId, "❌ У вас нет активной подписки. Сначала купите/продлите подписку."));
+                            execute(botMenuService.subscriptionMenu(chatId));
+                            break;
+                        }
+
+                        try {
+                            var key = vpnKeyService.issueKey(user);
+                            String msg = "🔑 Ваш VPN-ключ:\n\n" +
+                                    "<code>" + escapeHtml(key.getKeyValue()) + "</code>\n\n" +
+                                    "📌 Скопируйте ссылку и импортируйте в клиент (Hiddify / v2rayNG / Shadowrocket и т.д.).";
+
+                            SendMessage sm = SendMessage.builder()
+                                    .chatId(chatId.toString())
+                                    .text(msg)
+                                    .parseMode("HTML")
+                                    .build();
+                            execute(sm);
+                        } catch (Exception e) {
+                            execute(simpleMessage(chatId, "❌ Не удалось выдать ключ: " + e.getMessage()));
+                        }
+
+                        // Обновим меню подписки (например, чтобы юзер сразу видел статус)
+                        execute(botMenuService.subscriptionMenu(chatId));
                     }
                 }
                 execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
@@ -103,6 +135,14 @@ public class MainBot extends TelegramLongPollingBot {
                 .chatId(chatId.toString())
                 .text(text)
                 .build();
+    }
+
+    private String escapeHtml(String s) {
+        if (s == null) return "";
+        return s
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 
     // ИЗМЕНЕНИЕ СООБЩЕНИЯ

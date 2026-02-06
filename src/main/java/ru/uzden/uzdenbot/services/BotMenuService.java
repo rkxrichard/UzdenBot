@@ -57,9 +57,14 @@ public class BotMenuService {
         String buyOrExtendText = isActive ? "Продлить подписку" : "Купить подписку";
         String menuText = buildSubscriptionMenuText(activeSubOpt);
 
-        InlineKeyboardButton b1 = InlineKeyboardButton.builder()
+        InlineKeyboardButton bBuy = InlineKeyboardButton.builder()
                 .text(buyOrExtendText)
                 .callbackData("MENU_BUY")
+                .build();
+
+        InlineKeyboardButton bGetKey = InlineKeyboardButton.builder()
+                .text("Получить ключ")
+                .callbackData("MENU_GET_KEY")
                 .build();
 
 //        InlineKeyboardButton b2 = InlineKeyboardButton.builder()
@@ -67,27 +72,30 @@ public class BotMenuService {
 //                .callbackData("MENU_STATUS")
 //                .build();
 
-        InlineKeyboardButton b3 = InlineKeyboardButton.builder()
+        InlineKeyboardButton bBack = InlineKeyboardButton.builder()
                 .text("Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
 
-        
+
         InlineKeyboardMarkup keyboardMarkup;
-        if (buyOrExtendText.equals("Продлить подписку")) {
-             keyboardMarkup = InlineKeyboardMarkup.builder()
+        if (isActive) {
+            // Активна: дать кнопку ключа + продление
+            keyboardMarkup = InlineKeyboardMarkup.builder()
                     .keyboard(List.of(
-                            List.of(b1),
-                            List.of(b3)
+                            List.of(bGetKey),
+                            List.of(bBuy),
+                            List.of(bBack)
                     ))
                     .build();
         } else {
-             keyboardMarkup = InlineKeyboardMarkup.builder()
+            // Нет подписки: купить + назад
+            keyboardMarkup = InlineKeyboardMarkup.builder()
                     .keyboard(List.of(
-                            List.of(b1, b3)))
+                            List.of(bBuy, bBack)
+                    ))
                     .build();
-
         }
 
 
