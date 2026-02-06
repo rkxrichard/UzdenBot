@@ -76,7 +76,7 @@ public class VpnKeyService {
 
 
         // 2) если уже есть ACTIVE то просто возвращаю
-        if (key.getStatus() == VpnKey.Status.ACTIVE && key.isRevoked()) {
+        if (key.getStatus() == VpnKey.Status.ACTIVE && !key.isRevoked()) {
             return key;
         }
 

@@ -85,16 +85,10 @@ public class MainBot extends TelegramLongPollingBot {
                         execute(simpleMessage(chatId,"✅ Подписка продлена на 30 дней"));
                         execute(botMenuService.subscriptionMenu(chatId));
                     }
-//                    case "MENU_STATUS" -> {
-//                        User user = userService.registerOrUpdate(cq.getFrom());
-//                        var activeSub = subscriptionService.getActiveSubscription(user);
-//                        if (activeSub.isPresent()) {
-//                            long daysLeft = subscriptionService.getDaysLeft(activeSub.get());
-//                            execute(simpleMessage(chatId, "✅ Подписка активна\nОсталось дней: " + daysLeft));
-//                        } else {
-//                            execute(simpleMessage(chatId, "❌ Подписки нет"));
-//                        }
-//                    }
+                    case "MENU_GET_KEY" -> {
+                        // добавить реализацию выдачи ключа
+
+                    }
                 }
                 execute(AnswerCallbackQuery.builder().callbackQueryId(cq.getId()).build());
             }

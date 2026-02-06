@@ -29,6 +29,9 @@ public class Payment {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Column(name = "currency", nullable = false)
+    private String currency = "RUB";
+
     protected Payment() {}
 
     public Payment(User user, BigDecimal amount, String status) {

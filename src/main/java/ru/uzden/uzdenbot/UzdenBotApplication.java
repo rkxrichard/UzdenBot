@@ -10,6 +10,7 @@ import ru.uzden.uzdenbot.config.XuiProperties;
 @SpringBootApplication
 @EntityScan("ru.uzden.uzdenbot.entities")
 @ConfigurationProperties
+@EnableConfigurationProperties(XuiProperties.class)
 public class UzdenBotApplication {
     public static void main(String[] args) {
         SpringApplication.run(UzdenBotApplication.class, args);
