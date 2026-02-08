@@ -24,6 +24,13 @@ public class ThreeXuiClient {
     private final RestClient rest;
     private final XuiProperties props;
 
+    /**
+     * 3x-ui "panel" API is primarily consumed by its own web UI.
+     * Many installations expect browser-like headers (especially
+     * X-Requested-With and a /panel/* Referer). If they are missing,
+     * some endpoints may respond with 404 even though the URL exists.
+     */
+
     // cookie вида "3x-ui=...." или "session=...."
     private volatile String authCookie;
     private final ReentrantLock loginLock = new ReentrantLock();
@@ -72,6 +79,29 @@ public class ThreeXuiClient {
         return bp + p;
     }
 
+    private String absolutePanelReferer() {
+        // matches what the browser sends when working with inbound clients
+        return absolutePanelUrl("/panel/inbounds");
+    }
+
+    private String absolutePanelUrl(String panelPath) {
+        String base = props.baseUrl();
+        if (base == null) base = "";
+        base = base.trim();
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+
+        String bp = props.basePath();
+        if (bp == null) bp = "";
+        bp = bp.trim();
+        if (!bp.isEmpty() && !bp.startsWith("/")) bp = "/" + bp;
+        if (bp.endsWith("/")) bp = bp.substring(0, bp.length() - 1);
+
+        String p = (panelPath == null) ? "" : panelPath.trim();
+        if (!p.startsWith("/")) p = "/" + p;
+
+        return base + bp + p;
+    }
+
     /* ============================ public API ============================ */
 
     /**
@@ -97,7 +127,7 @@ public class ThreeXuiClient {
         }
 
         // verify: реально ли клиент появился в inbound
-        if (!clientExistsInInbound(inboundId, clientUuid.toString(), email)) {
+        if (!clientExistsInInbound(inboundId, clientUuid, email)) {
             throw new IllegalStateException("3x-ui addClient returned success but client not persisted (uuid/email not found in inbound)");
         }
     }
@@ -168,13 +198,19 @@ public class ThreeXuiClient {
 
     /* ============================ helpers ============================ */
 
-    private boolean clientExistsInInbound(long inboundId, String uuid, String email) {
+    /**
+     * Проверяет, что клиент реально присутствует в inbound.
+     * Полезно, когда в БД уже есть ACTIVE, но сервер (3x-ui/Xray) был переустановлен.
+     */
+    public boolean clientExistsInInbound(long inboundId, UUID clientUuid, String email) {
         String inbound = getInbound(inboundId);
         if (inbound == null) return false;
 
-        // settings и streamSettings в 3x-ui часто лежат строкой, поэтому просто проверяем наличие uuid/email в тексте
-        String hay = inbound;
-        return hay.contains(uuid) && (email == null || email.isBlank() || hay.contains(email));
+        // settings и streamSettings в 3x-ui часто лежат строкой,
+        // поэтому просто проверяем наличие uuid/email в тексте.
+        String uuid = clientUuid == null ? null : clientUuid.toString();
+        if (uuid == null || uuid.isBlank()) return false;
+        return inbound.contains(uuid) && (email == null || email.isBlank() || inbound.contains(email));
     }
 
     private static boolean looksLikeFullInbound(String inboundJson) {
@@ -308,6 +344,9 @@ public class ThreeXuiClient {
         return rest.get()
                 .uri(url(path))
                 .header(HttpHeaders.COOKIE, authCookie)
+                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header(HttpHeaders.REFERER, absolutePanelReferer())
                 .retrieve()
                 .body(String.class);
     }
@@ -316,6 +355,9 @@ public class ThreeXuiClient {
         return rest.post()
                 .uri(url(path))
                 .header(HttpHeaders.COOKIE, authCookie)
+                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header(HttpHeaders.REFERER, absolutePanelReferer())
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(form)
                 .retrieve()
@@ -326,6 +368,9 @@ public class ThreeXuiClient {
         rest.post()
                 .uri(url(path))
                 .header(HttpHeaders.COOKIE, authCookie)
+                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*")
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header(HttpHeaders.REFERER, absolutePanelReferer())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(jsonBody)
                 .retrieve()
@@ -490,7 +535,7 @@ public class ThreeXuiClient {
 
     private static String escapeJson(String s) {
         if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\");
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static String trimQuotes(String s) {
