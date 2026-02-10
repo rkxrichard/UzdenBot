@@ -5,15 +5,12 @@ import org.springframework.stereotype.Component;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * Строит vless:// ссылку для Reality.
+ * Строит vless:// ссылку для Reality (3x-ui 2.8.9).
  *
- * ВАЖНО: 3x-ui хранит streamSettings/settings как JSON-строки (escaped),
- * поэтому тут используются "поиск по тексту" + несколько паттернов (escaped/unescaped).
- * Это намного устойчивее, чем пытаться распарсить вложенный JSON через ObjectMapper.
+ * 3x-ui хранит streamSettings/settings как JSON-строки, а realitySettings
+ * может лежать строкой внутри streamSettings, поэтому распаковываем уровни.
  */
 @Component
 public class VlessLinkBuilder {
@@ -42,37 +39,38 @@ public class VlessLinkBuilder {
             String linkTag
     ) {
         try {
+            String inbound = JsonMini.unquoteIfString(inboundJson);
+
+            String streamSettings = JsonMini.unquoteIfString(
+                    JsonMini.extractFieldValue(inbound, "streamSettings")
+            );
+            String realitySettings = JsonMini.unquoteIfString(
+                    JsonMini.extractFieldValue(streamSettings, "realitySettings")
+            );
+            if (realitySettings == null || realitySettings.isBlank()) {
+                realitySettings = JsonMini.unquoteIfString(
+                        JsonMini.extractFieldValue(inbound, "realitySettings")
+                );
+            }
+            String settings = JsonMini.unquoteIfString(
+                    JsonMini.extractFieldValue(inbound, "settings")
+            );
+
             String pbk = firstNonBlank(
-                    findAny(inboundJson,
-                            // unescaped: "publicKey":"...."
-                            "\\\"publicKey\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
-                            // escaped inside string: \"publicKey\":\"....\"
-                            "\\\\\\\"publicKey\\\\\\\"\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\""
-                    ),
+                    stringField(realitySettings, "publicKey"),
+                    stringField(streamSettings, "publicKey"),
                     fallbackPublicKey
             );
 
             if (pbk == null || pbk.isBlank()) {
-                throw new IllegalStateException("reality publicKey not found (checked realitySettings.settings.publicKey, realitySettings.publicKey and xui.reality-public-key)");
+                throw new IllegalStateException("reality publicKey not found (checked streamSettings.realitySettings.publicKey and xui.reality-public-key)");
             }
 
             String sni = firstNonBlank(
-                    findAny(inboundJson,
-                            // "serverNames":["www.amazon.com"]
-                            "\\\"serverNames\\\"\\s*:\\s*\\[\\s*\\\"([^\\\"]+)\\\"",
-                            // \"serverNames\":[\"www.amazon.com\"]
-                            "\\\\\\\"serverNames\\\\\\\"\\s*:\\\\s*\\\\\\[\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\""
-                    ),
-                    // иногда serverName лежит отдельным полем
-                    findAny(inboundJson,
-                            "\\\"serverName\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
-                            "\\\\\\\"serverName\\\\\\\"\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\""
-                    ),
-                    // иногда target: www.amazon.com:443
-                    hostFromTarget(findAny(inboundJson,
-                            "\\\"target\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
-                            "\\\\\\\"target\\\\\\\"\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\""
-                    ))
+                    firstArrayItem(realitySettings, "serverNames"),
+                    stringField(realitySettings, "serverName"),
+                    hostFromTarget(stringField(realitySettings, "dest")),
+                    hostFromTarget(stringField(realitySettings, "target"))
             );
 
             if (sni == null || sni.isBlank()) {
@@ -80,48 +78,49 @@ public class VlessLinkBuilder {
             }
 
             String sid = firstNonBlank(
-                    findAny(inboundJson,
-                            "\\\"shortIds\\\"\\s*:\\s*\\[\\s*\\\"([^\\\"]+)\\\"",
-                            "\\\\\\\"shortIds\\\\\\\"\\s*:\\\\s*\\\\\\[\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\""
-                    ),
+                    firstArrayItem(realitySettings, "shortIds"),
                     "0000"
             );
 
             String fp = firstNonBlank(
-                    findAny(inboundJson,
-                            "\\\"fingerprint\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
-                            "\\\\\\\"fingerprint\\\\\\\"\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\""
-                    ),
+                    stringField(realitySettings, "fingerprint"),
+                    stringField(streamSettings, "fingerprint"),
                     "chrome"
             );
 
             String spx = firstNonBlank(
-                    findAny(inboundJson,
-                            "\\\"spiderX\\\"\\s*:\\s*\\\"([^\\\"]*)\\\"",
-                            "\\\\\\\"spiderX\\\\\\\"\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]*)\\\\\\\""
-                    ),
+                    stringField(realitySettings, "spiderX"),
                     "/"
             );
 
             String flow = firstNonBlank(
-                    findAny(inboundJson,
-                            "\\\"flow\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
-                            "\\\\\\\"flow\\\\\\\"\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\""
-                    ),
+                    findClientField(settings, clientUuid, "flow"),
                     "xtls-rprx-vision"
             );
+
+            String encryption = firstNonBlankNotNone(
+                    findClientField(settings, clientUuid, "encryption"),
+                    stringField(settings, "encryption"),
+                    stringField(realitySettings, "encryption"),
+                    stringField(streamSettings, "encryption"),
+                    findFirstStringFieldValue(settings, "encryption", true),
+                    findFirstStringFieldValue(realitySettings, "encryption", true),
+                    findFirstStringFieldValue(streamSettings, "encryption", true),
+                    findFirstStringFieldValue(inbound, "encryption", true)
+            );
+            if (encryption == null || encryption.isBlank()) encryption = "none";
 
             // Собираем простую ссылку как в твоём curl-успешном примере
             StringBuilder qs = new StringBuilder();
             qs.append("type=tcp");
+            qs.append("&encryption=").append(url(encryption));
             qs.append("&security=reality");
-            qs.append("&encryption=none");
-            qs.append("&flow=").append(url(flow));
-            qs.append("&sni=").append(url(sni));
-            qs.append("&fp=").append(url(fp));
             qs.append("&pbk=").append(url(pbk));
+            qs.append("&fp=").append(url(fp));
+            qs.append("&sni=").append(url(sni));
             qs.append("&sid=").append(url(sid));
             qs.append("&spx=").append(url(spx));
+            qs.append("&flow=").append(url(flow));
 
             String tag = (linkTag == null || linkTag.isBlank()) ? "vpn" : linkTag;
             return "vless://" + clientUuid + "@" + publicHost + ":" + publicPort + "?" + qs + "#" + urlFragment(tag);
@@ -148,22 +147,87 @@ public class VlessLinkBuilder {
         return null;
     }
 
-    private static String findAny(String text, String... patterns) {
-        if (text == null) return null;
-        for (String p : patterns) {
-            String v = regexGroup(text, p, 1);
-            if (v != null && !v.isBlank()) return v;
+    private static String firstNonBlankNotNone(String... values) {
+        if (values == null) return null;
+        for (String v : values) {
+            if (v != null && !v.isBlank() && !"none".equalsIgnoreCase(v)) return v;
         }
         return null;
     }
 
-    private static String regexGroup(String text, String pattern, int group) {
-        try {
-            Matcher m = Pattern.compile(pattern, Pattern.DOTALL).matcher(text);
-            if (m.find()) return m.group(group);
-            return null;
-        } catch (Exception ignore) {
-            return null;
+    private static String stringField(String json, String field) {
+        return JsonMini.unquoteIfString(JsonMini.extractFieldValue(json, field));
+    }
+
+    private static String firstArrayItem(String json, String field) {
+        String arr = JsonMini.extractFieldValue(json, field);
+        return firstStringInJson(arr);
+    }
+
+    private static String firstStringInJson(String json) {
+        if (json == null) return null;
+        int start = json.indexOf('"');
+        if (start < 0) return null;
+        int end = JsonMini.findStringEnd(json, start);
+        if (end < 0) return null;
+        return JsonMini.unquoteIfString(json.substring(start, end + 1));
+    }
+
+    private static String findClientField(String settingsJson, String clientUuid, String field) {
+        if (settingsJson == null || settingsJson.isBlank()) return null;
+        String uuid = (clientUuid == null) ? null : clientUuid.trim();
+        if (uuid != null && !uuid.isBlank()) {
+            int idx = settingsJson.indexOf(uuid);
+            if (idx >= 0) {
+                int objStart = settingsJson.lastIndexOf('{', idx);
+                if (objStart >= 0) {
+                    int objEnd = JsonMini.findMatchingBracket(settingsJson, objStart);
+                    if (objEnd > objStart) {
+                        String obj = settingsJson.substring(objStart, objEnd + 1);
+                        String v = findStringField(obj, field);
+                        if (v != null && !v.isBlank()) return v;
+                    }
+                }
+            }
+        }
+        return findStringField(settingsJson, field);
+    }
+
+    private static String findStringField(String json, String field) {
+        if (json == null) return null;
+        String needle = "\"" + field + "\"";
+        int idx = json.indexOf(needle);
+        if (idx < 0) return null;
+        int colon = json.indexOf(':', idx + needle.length());
+        if (colon < 0) return null;
+        int i = colon + 1;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) i++;
+        if (i >= json.length() || json.charAt(i) != '"') return null;
+        int end = JsonMini.findStringEnd(json, i);
+        if (end < 0) return null;
+        return JsonMini.unquoteIfString(json.substring(i, end + 1));
+    }
+
+    private static String findFirstStringFieldValue(String json, String field, boolean skipNone) {
+        if (json == null) return null;
+        String needle = "\"" + field + "\"";
+        int idx = 0;
+        while (true) {
+            idx = json.indexOf(needle, idx);
+            if (idx < 0) return null;
+            int colon = json.indexOf(':', idx + needle.length());
+            if (colon < 0) return null;
+            int i = colon + 1;
+            while (i < json.length() && Character.isWhitespace(json.charAt(i))) i++;
+            if (i >= json.length() || json.charAt(i) != '"') {
+                idx = colon + 1;
+                continue;
+            }
+            int end = JsonMini.findStringEnd(json, i);
+            if (end < 0) return null;
+            String val = JsonMini.unquoteIfString(json.substring(i, end + 1));
+            if (val != null && !val.isBlank() && (!skipNone || !"none".equalsIgnoreCase(val))) return val;
+            idx = end + 1;
         }
     }
 

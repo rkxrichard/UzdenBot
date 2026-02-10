@@ -16,6 +16,8 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -23,6 +25,8 @@ public class ThreeXuiClient {
 
     private final RestClient rest;
     private final XuiProperties props;
+    private final String normalizedBaseUrl;
+    private final String normalizedBasePath;
 
     /**
      * 3x-ui "panel" API is primarily consumed by its own web UI.
@@ -57,22 +61,40 @@ public class ThreeXuiClient {
     public ThreeXuiClient(RestClient.Builder builder, XuiProperties props) {
         this.props = props;
 
+        // Нормализация конфига: часто base-url и base-path путают местами.
+        String bu = Objects.requireNonNull(props.baseUrl(), "xui.base-url is required").trim();
+        String bp = Optional.ofNullable(props.basePath()).orElse("").trim();
+
+        boolean buLooksLikeUrl = bu.startsWith("http://") || bu.startsWith("https://");
+        boolean bpLooksLikeUrl = bp.startsWith("http://") || bp.startsWith("https://");
+        if (!buLooksLikeUrl && bpLooksLikeUrl) {
+            log.warn("xui.base-url/base-path look swapped. baseUrl='{}', basePath='{}'. Swapping them.", bu, bp);
+            String tmp = bu;
+            bu = bp;
+            bp = tmp;
+        }
+
+        // baseUrl: без завершающего слэша
+        while (bu.endsWith("/")) bu = bu.substring(0, bu.length() - 1);
+        this.normalizedBaseUrl = bu;
+
+        // basePath: может быть пустым, но если не пустой — начинается с / и без завершающего /
+        if (!bp.isEmpty() && !bp.startsWith("/")) bp = "/" + bp;
+        while (bp.endsWith("/") && bp.length() > 1) bp = bp.substring(0, bp.length() - 1);
+        this.normalizedBasePath = bp;
+
         SimpleClientHttpRequestFactory rf = new SimpleClientHttpRequestFactory();
         rf.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
         rf.setReadTimeout((int) Duration.ofSeconds(10).toMillis());
 
         this.rest = builder
-                .baseUrl(Objects.requireNonNull(props.baseUrl(), "xui.base-url is required"))
+                .baseUrl(this.normalizedBaseUrl)
                 .requestFactory(rf)
                 .build();
     }
 
     private String url(String path) {
-        String bp = props.basePath();
-        if (bp == null) bp = "";
-        bp = bp.trim();
-        if (!bp.isEmpty() && !bp.startsWith("/")) bp = "/" + bp;
-        if (bp.endsWith("/")) bp = bp.substring(0, bp.length() - 1);
+        String bp = normalizedBasePath;
 
         String p = (path == null) ? "" : path.trim();
         if (!p.startsWith("/")) p = "/" + p;
@@ -85,16 +107,8 @@ public class ThreeXuiClient {
     }
 
     private String absolutePanelUrl(String panelPath) {
-        String base = props.baseUrl();
-        if (base == null) base = "";
-        base = base.trim();
-        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
-
-        String bp = props.basePath();
-        if (bp == null) bp = "";
-        bp = bp.trim();
-        if (!bp.isEmpty() && !bp.startsWith("/")) bp = "/" + bp;
-        if (bp.endsWith("/")) bp = bp.substring(0, bp.length() - 1);
+        String base = normalizedBaseUrl;
+        String bp = normalizedBasePath;
 
         String p = (panelPath == null) ? "" : panelPath.trim();
         if (!p.startsWith("/")) p = "/" + p;
@@ -123,7 +137,13 @@ public class ThreeXuiClient {
         ApiEnvelope env = ApiEnvelope.parse(body);
 
         if (!env.success) {
-            throw new IllegalStateException("3x-ui addClient failed: " + (env.msg == null ? body : env.msg));
+            String msg = (env.msg == null ? body : env.msg);
+            // 3x-ui может вернуть ошибку "Duplicate email" если клиент уже существует.
+            // Для нас это идемпотентный результат: считаем, что клиент уже добавлен ранее.
+            if (msg != null && msg.toLowerCase().contains("duplicate email")) {
+                return;
+            }
+            throw new IllegalStateException("3x-ui addClient failed: " + msg);
         }
 
         // verify: реально ли клиент появился в inbound
@@ -135,23 +155,40 @@ public class ThreeXuiClient {
     public void disableClient(long inboundId, UUID clientUuid) {
         ensureLoggedIn();
 
-        // минимальный JSON (без ObjectMapper), достаточный для updateClient в большинстве сборок
-        String bodyJson = "{"
-                + "\"inboundId\":" + inboundId + ","
-                + "\"client\":{\"id\":\"" + escapeJson(clientUuid.toString()) + "\",\"enable\":false}"
-                + "}";
+        String inbound = getInbound(inboundId);
+        String settings = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "settings"));
+        String clientJson = extractClientObject(settings, clientUuid.toString());
+        if (clientJson == null) {
+            return;
+        }
+        String disabledClientJson = setBooleanField(clientJson, "enable", false);
+        String settingsJson = "{\"clients\":[" + disabledClientJson + "]}";
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("id", String.valueOf(inboundId));
+        form.add("settings", settingsJson);
 
         HttpClientErrorException last = null;
         for (String pattern : UPDATE_CLIENT_CANDIDATES) {
             String path = String.format(pattern, clientUuid);
             try {
-                postJsonWithAuth(path, bodyJson);
+                String body = postFormWithAuth(path, form);
+                ApiEnvelope env = ApiEnvelope.parse(body);
+                if (!env.success) {
+                    String msg = (env.msg == null ? body : env.msg);
+                    throw new IllegalStateException("3x-ui updateClient failed: " + msg);
+                }
                 return;
             } catch (HttpClientErrorException e) {
                 last = e;
                 if (isAuthError(e)) {
                     reloginAndRetry(() -> {
-                        postJsonWithAuth(path, bodyJson);
+                        String body = postFormWithAuth(path, form);
+                        ApiEnvelope env = ApiEnvelope.parse(body);
+                        if (!env.success) {
+                            String msg = (env.msg == null ? body : env.msg);
+                            throw new IllegalStateException("3x-ui updateClient failed: " + msg);
+                        }
                         return "";
                     });
                     return;
@@ -267,11 +304,11 @@ public class ThreeXuiClient {
         if (t.startsWith("[")) return t;
 
         // envelope: попробуем obj, data, inbound
-        String obj = JsonMini.extractFieldValue(t, "obj");
+        String obj = JsonMini.unquoteIfString(JsonMini.extractFieldValue(t, "obj"));
         if (obj != null) return obj;
-        String data = JsonMini.extractFieldValue(t, "data");
+        String data = JsonMini.unquoteIfString(JsonMini.extractFieldValue(t, "data"));
         if (data != null) return data;
-        String inbound = JsonMini.extractFieldValue(t, "inbound");
+        String inbound = JsonMini.unquoteIfString(JsonMini.extractFieldValue(t, "inbound"));
         if (inbound != null) return inbound;
 
         return body;
@@ -399,115 +436,6 @@ public class ThreeXuiClient {
         }
     }
 
-    private static final class JsonMini {
-
-        static String extractFieldValue(String jsonObject, String field) {
-            if (jsonObject == null) return null;
-            String t = jsonObject.trim();
-            if (!t.startsWith("{")) return null;
-
-            int idx = indexOfField(t, field);
-            if (idx < 0) return null;
-
-            int colon = t.indexOf(':', idx);
-            if (colon < 0) return null;
-
-            int valStart = colon + 1;
-            while (valStart < t.length() && Character.isWhitespace(t.charAt(valStart))) valStart++;
-
-            return extractJsonValue(t, valStart);
-        }
-
-        static int indexOfField(String json, String field) {
-            // ищем "field"
-            String needle = "\"" + field + "\"";
-            int i = json.indexOf(needle);
-            if (i < 0) return -1;
-            return i + needle.length();
-        }
-
-        /**
-         * Возвращает JSON-значение начиная с pos (может быть объект, массив, строка, число, true/false/null).
-         */
-        static String extractJsonValue(String s, int pos) {
-            if (s == null || pos < 0 || pos >= s.length()) return null;
-            int i = pos;
-            while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
-            if (i >= s.length()) return null;
-
-            char c = s.charAt(i);
-            if (c == '"') {
-                int end = findStringEnd(s, i);
-                if (end < 0) return null;
-                return s.substring(i, end + 1);
-            }
-            if (c == '{' || c == '[') {
-                int end = findMatchingBracket(s, i);
-                if (end < 0) return null;
-                return s.substring(i, end + 1);
-            }
-            // primitive
-            int end = i;
-            while (end < s.length() && ",}\n\r\t".indexOf(s.charAt(end)) < 0) end++;
-            return s.substring(i, end).trim();
-        }
-
-        static int findStringEnd(String s, int startQuote) {
-            boolean esc = false;
-            for (int i = startQuote + 1; i < s.length(); i++) {
-                char c = s.charAt(i);
-                if (esc) {
-                    esc = false;
-                    continue;
-                }
-                if (c == '\\') {
-                    esc = true;
-                    continue;
-                }
-                if (c == '"') return i;
-            }
-            return -1;
-        }
-
-        static int findMatchingBracket(String s, int start) {
-            char open = s.charAt(start);
-            char close = (open == '{') ? '}' : ']';
-            int depth = 0;
-            boolean inStr = false;
-            boolean esc = false;
-
-            for (int i = start; i < s.length(); i++) {
-                char c = s.charAt(i);
-
-                if (inStr) {
-                    if (esc) {
-                        esc = false;
-                        continue;
-                    }
-                    if (c == '\\') {
-                        esc = true;
-                        continue;
-                    }
-                    if (c == '"') {
-                        inStr = false;
-                    }
-                    continue;
-                }
-
-                if (c == '"') {
-                    inStr = true;
-                    continue;
-                }
-                if (c == open) depth++;
-                else if (c == close) {
-                    depth--;
-                    if (depth == 0) return i;
-                }
-            }
-            return -1;
-        }
-    }
-
     /* ============================ misc ============================ */
 
     private static String randomSubId(int len) {
@@ -543,5 +471,33 @@ public class ThreeXuiClient {
         String t = s.trim();
         if (t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")) return t.substring(1, t.length() - 1);
         return t;
+    }
+
+    private static String extractClientObject(String settingsJson, String clientUuid) {
+        if (settingsJson == null || settingsJson.isBlank() || clientUuid == null || clientUuid.isBlank()) return null;
+        int idx = settingsJson.indexOf(clientUuid);
+        if (idx < 0) return null;
+        int objStart = settingsJson.lastIndexOf('{', idx);
+        if (objStart < 0) return null;
+        int objEnd = JsonMini.findMatchingBracket(settingsJson, objStart);
+        if (objEnd < 0) return null;
+        String obj = settingsJson.substring(objStart, objEnd + 1);
+        if (!obj.contains("\"id\"")) return null;
+        return obj;
+    }
+
+    private static String setBooleanField(String jsonObj, String field, boolean value) {
+        if (jsonObj == null || jsonObj.isBlank() || field == null || field.isBlank()) return jsonObj;
+        String v = value ? "true" : "false";
+        Pattern p = Pattern.compile("\"" + Pattern.quote(field) + "\"\\s*:\\s*(true|false)");
+        Matcher m = p.matcher(jsonObj);
+        if (m.find()) {
+            return m.replaceFirst("\"" + field + "\":" + v);
+        }
+        int insertPos = jsonObj.lastIndexOf('}');
+        if (insertPos < 0) return jsonObj;
+        String prefix = jsonObj.substring(0, insertPos).trim();
+        String sep = prefix.endsWith("{") ? "" : ",";
+        return jsonObj.substring(0, insertPos) + sep + "\"" + field + "\":" + v + jsonObj.substring(insertPos);
     }
 }

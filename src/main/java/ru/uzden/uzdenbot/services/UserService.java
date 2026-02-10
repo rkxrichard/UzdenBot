@@ -7,6 +7,7 @@ import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -36,5 +37,22 @@ public class UserService {
                     u.setCreatedAt(LocalDateTime.now());
                     return userRepository.save(u);
                 });
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<User> findByTelegramId(Long telegramId) {
+        return userRepository.findUserByTelegramId(telegramId);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<User> findByUsername(String username) {
+        if (username == null) return Optional.empty();
+        return userRepository.findUserByUsernameIgnoreCase(username);
+    }
+
+    @Transactional
+    public User setDisabled(User user, boolean disabled) {
+        user.setDisabled(disabled);
+        return userRepository.save(user);
     }
 }

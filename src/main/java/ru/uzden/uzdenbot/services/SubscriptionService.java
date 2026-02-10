@@ -23,6 +23,7 @@ public class SubscriptionService {
     }
 
     public boolean hasActiveSubscription(User user) {
+        if (user == null || user.isDisabled()) return false;
         return subscriptionRepository.findTopByUserAndEndDateAfterOrderByEndDateDesc(user, LocalDateTime.now()).isPresent();
     }
 
@@ -44,6 +45,7 @@ public class SubscriptionService {
         subscription.setStartDate(start);
         subscription.setEndDate(start.plusDays(days));
         subscription.setCreatedAt(createdAt);
+        subscription.setActive(true);
 
         return subscriptionRepository.save(subscription);
     }
@@ -53,6 +55,16 @@ public class SubscriptionService {
         return subscriptionRepository.findTopByUserAndEndDateAfterOrderByEndDateDesc(
                 user, LocalDateTime.now()
         );
+    }
+
+    @Transactional
+    public Optional<Subscription> revokeActiveSubscription(User user) {
+        Optional<Subscription> active = getActiveSubscription(user);
+        if (active.isEmpty()) return Optional.empty();
+        Subscription sub = active.get();
+        sub.setEndDate(LocalDateTime.now());
+        sub.setActive(false);
+        return Optional.of(subscriptionRepository.save(sub));
     }
 
     public long getDaysLeft(Subscription sub) {

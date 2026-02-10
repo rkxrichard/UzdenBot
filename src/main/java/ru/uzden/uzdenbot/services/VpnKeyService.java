@@ -77,6 +77,9 @@ public class VpnKeyService {
 
         // 2) если уже есть ACTIVE то просто возвращаю
         if (key.getStatus() == VpnKey.Status.ACTIVE && !key.isRevoked()) {
+            if (needsLinkRefresh(key)) {
+                return refreshActiveLink(key);
+            }
             return key;
         }
 
@@ -107,19 +110,17 @@ public class VpnKeyService {
      * (сначала создается новый, потом отзывается старый)
      */
     public VpnKey replaceKey(User user) {
+        ReplaceContext ctx = tx.execute(status -> replaceTx(user.getId()));
 
-        Optional<VpnKey> oldActive = vpnKeyRepository.findActiveKey(user.getId());
-        VpnKey newKey = issueKey(user);
+        VpnKey newKey = finalizeIssueOutsideTx(ctx.newKeyId);
 
-        oldActive.ifPresent(old -> {
-            if (!old.getId().equals(newKey.getId()) && old.isActive()) {
-                try {
-                    revokeById(old.getId());
-                } catch (Exception e) {
-                    log.error("Не удалось отозвать старый ключ id={}", old.getId(), e);
-                }
+        if (ctx.oldInboundId != null && ctx.oldClientUuid != null) {
+            try {
+                xuiClient.disableClient(ctx.oldInboundId, ctx.oldClientUuid);
+            } catch (Exception e) {
+                log.error("Не удалось выключить старый ключ клиента: inbound:{}, uuid:{}", ctx.oldInboundId, ctx.oldClientUuid, e);
             }
-        });
+        }
 
         return newKey;
     }
@@ -174,6 +175,37 @@ public class VpnKeyService {
         if (existing.isPresent())
             return existing.get();
 
+        try {
+            return vpnKeyRepository.save(buildPendingKey(userId));
+        } catch (DataIntegrityViolationException e) {
+            // Кто-то параллельно успел создать PENDING/ACTIVE (твой unique index из V4)
+            return vpnKeyRepository.findActiveOrPending(userId)
+                    .orElseThrow(() -> e);
+        }
+
+
+    }
+
+    private ReplaceContext replaceTx(Long userId) {
+        userRepository.lockUser(userId);
+
+        VpnKey old = vpnKeyRepository.findActiveOrPending(userId).orElse(null);
+        if (old != null) {
+            old.markRevoked();
+            old.setLastError(null);
+            vpnKeyRepository.save(old);
+            vpnKeyRepository.flush();
+        }
+
+        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId));
+        return new ReplaceContext(
+                pending.getId(),
+                old == null ? null : old.getInboundId(),
+                old == null ? null : old.getClientUuid()
+        );
+    }
+
+    private VpnKey buildPendingKey(Long userId) {
         VpnKey pending = new VpnKey();
         pending.setUser(userRepository.getReferenceById(userId));
 
@@ -183,21 +215,27 @@ public class VpnKeyService {
         // лучше стабильно, чтобы в панели было понятно чей ключ
         // telegramId у тебя есть в User
         Long tg = userRepository.getReferenceById(userId).getTelegramId();
-        pending.setClientEmail("tg_" + tg);
+        // В 3x-ui поле email должно быть уникальным внутри inbound.
+        // Поэтому добавляем кусок uuid, чтобы повторная/параллельная выдача не падала Duplicate email.
+        String shortUuid = clientUuid.toString().substring(0, 8);
+        pending.setClientEmail("tg_" + tg + "_" + shortUuid);
         pending.setStatus(VpnKey.Status.PENDING);
         pending.setRevoked(false);
 
         pending.setKeyValue("PENDING:" + clientUuid);
+        return pending;
+    }
 
-        try {
-            return vpnKeyRepository.save(pending);
-        } catch (DataIntegrityViolationException e) {
-            // Кто-то параллельно успел создать PENDING/ACTIVE (твой unique index из V4)
-            return vpnKeyRepository.findActiveOrPending(userId)
-                    .orElseThrow(() -> e);
+    private static final class ReplaceContext {
+        final long newKeyId;
+        final Long oldInboundId;
+        final UUID oldClientUuid;
+
+        private ReplaceContext(long newKeyId, Long oldInboundId, UUID oldClientUuid) {
+            this.newKeyId = newKeyId;
+            this.oldInboundId = oldInboundId;
+            this.oldClientUuid = oldClientUuid;
         }
-
-
     }
 
 
@@ -313,5 +351,31 @@ public class VpnKeyService {
     private String safeMsg(Throwable t) {
         String m = t.getMessage();
         return (m == null || m.isBlank()) ? t.getClass().getSimpleName() : m;
+    }
+
+    private boolean needsLinkRefresh(VpnKey key) {
+        String v = key.getKeyValue();
+        if (v == null || v.isBlank()) return false;
+        if (!v.startsWith("vless://")) return false;
+        return v.contains("encryption=none") || !v.contains("encryption=");
+    }
+
+    private VpnKey refreshActiveLink(VpnKey key) {
+        try {
+            String inboundJson = xuiClient.getInbound(key.getInboundId());
+            String vlessLink = linkBuilder.buildRealityLink(
+                    inboundJson,
+                    publicHost,
+                    publicPort,
+                    key.getClientUuid(),
+                    linkTag
+            );
+            if (!vlessLink.equals(key.getKeyValue())) {
+                return tx.execute(status -> activateTx(key.getId(), vlessLink));
+            }
+        } catch (Exception e) {
+            log.warn("Не удалось обновить ссылку ACTIVE keyId={}: {}", key.getId(), safeMsg(e));
+        }
+        return key;
     }
 }

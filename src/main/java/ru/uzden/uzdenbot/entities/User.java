@@ -27,6 +27,9 @@ public class User {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "is_disabled", nullable = false)
+    private boolean disabled = false;
+
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<Subscription> subscriptions = new ArrayList<>();
 }

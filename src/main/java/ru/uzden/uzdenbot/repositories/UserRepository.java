@@ -14,6 +14,8 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User,Long> {
     Optional<User> findUserByTelegramId(Long telegramId);
 
+    Optional<User> findUserByUsernameIgnoreCase(String username);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")
     User lockUser(@Param("id") Long id);
