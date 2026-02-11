@@ -1,11 +1,11 @@
 package ru.uzden.uzdenbot.services;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.repositories.SubscriptionRepository;
+import ru.uzden.uzdenbot.repositories.UserRepository;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -16,10 +16,11 @@ import java.util.Optional;
 public class SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
+    private final UserRepository userRepository;
 
-    @Autowired
-    public SubscriptionService(SubscriptionRepository subscriptionRepository) {
+    public SubscriptionService(SubscriptionRepository subscriptionRepository, UserRepository userRepository) {
         this.subscriptionRepository = subscriptionRepository;
+        this.userRepository = userRepository;
     }
 
     public boolean hasActiveSubscription(User user) {
@@ -30,6 +31,10 @@ public class SubscriptionService {
 
     @Transactional
     public Subscription extendSubscription(User user, int days) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is required");
+        }
+        userRepository.lockUser(user.getId());
 
         LocalDateTime now = LocalDateTime.now();
         Instant createdAt = Instant.now();
@@ -59,6 +64,10 @@ public class SubscriptionService {
 
     @Transactional
     public Optional<Subscription> revokeActiveSubscription(User user) {
+        if (user == null || user.getId() == null) {
+            return Optional.empty();
+        }
+        userRepository.lockUser(user.getId());
         Optional<Subscription> active = getActiveSubscription(user);
         if (active.isEmpty()) return Optional.empty();
         Subscription sub = active.get();

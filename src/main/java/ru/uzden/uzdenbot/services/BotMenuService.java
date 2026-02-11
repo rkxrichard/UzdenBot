@@ -24,6 +24,9 @@ public class BotMenuService {
     @Value("${telegram.main-menu-text:Добро пожаловать в Uzden.\\n\\nЗдесь всё просто: управляйте подпиской и получайте доступ к сервису в пару нажатий.\\n\\nВыберите нужный раздел ниже.}")
     private String mainMenuText;
 
+    @Value("${telegram.instructions-text:Инструкция}")
+    private String instructionsText;
+
     private static final DateTimeFormatter DT_FMT   = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     public SendMessage mainMenu(Long chatId, boolean isAdmin) {
@@ -35,14 +38,14 @@ public class BotMenuService {
                 .text("Админка")
                 .callbackData("MENU_ADMIN")
                 .build();
-//        InlineKeyboardButton b3 = InlineKeyboardButton.builder()
-//                .text("Help")
-//                .callbackData("MENU_HELP")
-//                .build();
+        InlineKeyboardButton bHelp = InlineKeyboardButton.builder()
+                .text("Инструкция")
+                .callbackData("MENU_HELP")
+                .build();
 
         List<List<InlineKeyboardButton>> rows = isAdmin
-                ? List.of(List.of(b1), List.of(bAdmin))
-                : List.of(List.of(b1));
+                ? List.of(List.of(b1), List.of(bHelp), List.of(bAdmin))
+                : List.of(List.of(b1), List.of(bHelp));
 
         InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
                 .keyboard(rows)
@@ -95,6 +98,23 @@ public class BotMenuService {
         return SendMessage.builder()
                 .chatId(chatId.toString())
                 .text("🛠 Админ-меню")
+                .replyMarkup(keyboardMarkup)
+                .build();
+    }
+
+    public SendMessage instructionsMenu(Long chatId) {
+        InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                .text("Назад")
+                .callbackData("MENU_BACK")
+                .build();
+
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(List.of(bBack)))
+                .build();
+
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(instructionsText)
                 .replyMarkup(keyboardMarkup)
                 .build();
     }
@@ -164,6 +184,63 @@ public class BotMenuService {
                 .build();
     }
 
+    public SendMessage subscriptionPlanMenu(Long chatId) {
+        User user = userRepository.findUserByTelegramId(chatId)
+                .orElseThrow(() -> new IllegalStateException("User not found for chatId: " + chatId));
+        Optional<Subscription> activeSubOpt = subscriptionService.getActiveSubscription(user);
+        String baseText = buildSubscriptionMenuText(activeSubOpt);
+
+        int baseMonthlyPrice = 199;
+        Plan p1 = new Plan(1, 199);
+        Plan p3 = new Plan(3, 399);
+        Plan p6 = new Plan(6, 699);
+        Plan p12 = new Plan(12, 1199);
+
+        String text = baseText + "\n\n" +
+                "💳 Выберите срок подписки:\n" +
+                "• 1 месяц — 199₽\n" +
+                "• 3 месяца — 399₽ (скидка " + discountPercent(baseMonthlyPrice, p3) + "%)\n" +
+                "• 6 месяцев — 699₽ (скидка " + discountPercent(baseMonthlyPrice, p6) + "%)\n" +
+                "• 12 месяцев — 1199₽ (скидка " + discountPercent(baseMonthlyPrice, p12) + "%)";
+
+        InlineKeyboardButton b1 = InlineKeyboardButton.builder()
+                .text("1 месяц — 199₽")
+                .callbackData("BUY_1M")
+                .build();
+        InlineKeyboardButton b3 = InlineKeyboardButton.builder()
+                .text("3 месяца — 399₽ (" + discountPercent(baseMonthlyPrice, p3) + "%)")
+                .callbackData("BUY_3M")
+                .build();
+        InlineKeyboardButton b6 = InlineKeyboardButton.builder()
+                .text("6 месяцев — 699₽ (" + discountPercent(baseMonthlyPrice, p6) + "%)")
+                .callbackData("BUY_6M")
+                .build();
+        InlineKeyboardButton b12 = InlineKeyboardButton.builder()
+                .text("12 месяцев — 1199₽ (" + discountPercent(baseMonthlyPrice, p12) + "%)")
+                .callbackData("BUY_12M")
+                .build();
+        InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                .text("Назад")
+                .callbackData("MENU_SUBSCRIPTION")
+                .build();
+
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(
+                        List.of(b1),
+                        List.of(b3),
+                        List.of(b6),
+                        List.of(b12),
+                        List.of(bBack)
+                ))
+                .build();
+
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(text)
+                .replyMarkup(keyboardMarkup)
+                .build();
+    }
+
     private String buildSubscriptionMenuText(Optional<Subscription> activeSubOpt) {
         if (activeSubOpt.isEmpty()) {
             return "📦 Подписка\n\n" +
@@ -200,5 +277,24 @@ public class BotMenuService {
         }
 
         return daysLeft + " " + word;
+    }
+
+    private int discountPercent(int baseMonthlyPrice, Plan plan) {
+        if (plan.months <= 1 || baseMonthlyPrice <= 0) return 0;
+        double baseTotal = baseMonthlyPrice * (double) plan.months;
+        if (baseTotal <= 0) return 0;
+        double discount = 100.0 - (plan.price / baseTotal) * 100.0;
+        int rounded = (int) Math.round(discount / 5.0) * 5;
+        return Math.max(0, rounded);
+    }
+
+    private static final class Plan {
+        final int months;
+        final int price;
+
+        private Plan(int months, int price) {
+            this.months = months;
+            this.price = price;
+        }
     }
 }

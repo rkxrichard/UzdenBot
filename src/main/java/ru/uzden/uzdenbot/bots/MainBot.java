@@ -30,6 +30,7 @@ public class MainBot extends TelegramLongPollingBot {
     private final VpnKeyService vpnKeyService;
     private final RateLimiterService rateLimiterService;
     private final IdempotencyService idempotencyService;
+    private final Duration updateIdempotencyTtl;
 
     private final String token;
     private final String username;
@@ -44,6 +45,7 @@ public class MainBot extends TelegramLongPollingBot {
             VpnKeyService vpnKeyService,
             RateLimiterService rateLimiterService,
             IdempotencyService idempotencyService,
+            @Value("${app.idempotency.update-ttl-seconds:600}") long updateTtlSeconds,
             @Value("${telegram.bot.token}") String token,
             @Value("${telegram.bot.username}")String username) {
         this.botMenuService = botMenuService;
@@ -54,6 +56,7 @@ public class MainBot extends TelegramLongPollingBot {
         this.vpnKeyService = vpnKeyService;
         this.rateLimiterService = rateLimiterService;
         this.idempotencyService = idempotencyService;
+        this.updateIdempotencyTtl = Duration.ofSeconds(updateTtlSeconds);
         this.token = token;
         this.username = username;
     }
@@ -71,6 +74,9 @@ public class MainBot extends TelegramLongPollingBot {
     @Override
     public void onUpdateReceived(Update update) {
         try {
+            if (!isNewUpdate(update)) {
+                return;
+            }
             Long rateChatId = null;
             Long rateUserId = null;
             String rateCallbackId = null;
@@ -148,7 +154,7 @@ public class MainBot extends TelegramLongPollingBot {
 
                 switch (data) {
                     case "MENU_SUBSCRIPTION" -> editFromSendMessage(botMenuService.subscriptionMenu(chatId), chatId, messageId);
-//                    case "MENU_HELP" -> editFromSendMessage(simpleMessage(chatId,"Help menu"),chatId,messageId);
+                    case "MENU_HELP" -> editFromSendMessage(botMenuService.instructionsMenu(chatId), chatId, messageId);
                     case "MENU_BACK" -> {
                         adminStateService.clear(chatId);
                         editFromSendMessage(botMenuService.mainMenu(chatId, isAdmin), chatId, messageId);
@@ -160,17 +166,11 @@ public class MainBot extends TelegramLongPollingBot {
                         }
                     }
 
-                    case "MENU_BUY" -> {
-                        // ПОТОМ ДОБАВИТЬ РЕАЛИЗАЦИЮ СМЕНЫ (КУПИТЬ/ПРОДЛИТЬ)
-                        // да и впринципе добавить реаллизацию оплаты через Юкассу
-                        user = userService.registerOrUpdate(cq.getFrom());
-                        if (!guardIdempotency(chatId, "buy:" + user.getId(), Duration.ofSeconds(10), cq.getId())) {
-                            return;
-                        }
-                        subscriptionService.extendSubscription(user, 30);
-                        execute(simpleMessage(chatId,"✅ Подписка продлена на 30 дней"));
-                        execute(botMenuService.subscriptionMenu(chatId));
-                    }
+                    case "MENU_BUY" -> editFromSendMessage(botMenuService.subscriptionPlanMenu(chatId), chatId, messageId);
+                    case "BUY_1M" -> handlePlanPurchase(chatId, cq.getId(), cq.getFrom(), 30, 199, "1 месяц");
+                    case "BUY_3M" -> handlePlanPurchase(chatId, cq.getId(), cq.getFrom(), 90, 399, "3 месяца");
+                    case "BUY_6M" -> handlePlanPurchase(chatId, cq.getId(), cq.getFrom(), 180, 699, "6 месяцев");
+                    case "BUY_12M" -> handlePlanPurchase(chatId, cq.getId(), cq.getFrom(), 365, 1199, "12 месяцев");
                     case "MENU_GET_KEY" -> {
                         user = userService.registerOrUpdate(cq.getFrom());
 
@@ -334,6 +334,17 @@ public class MainBot extends TelegramLongPollingBot {
         return false;
     }
 
+    private boolean isNewUpdate(Update update) {
+        Integer updateId = update == null ? null : update.getUpdateId();
+        if (updateId == null) return true;
+        try {
+            return idempotencyService.tryAcquire("idemp:update:" + updateId, updateIdempotencyTtl);
+        } catch (Exception e) {
+            log.warn("Update idempotency check failed: {}", e.getMessage());
+            return true;
+        }
+    }
+
     private void handleAdminInput(Long chatId, String text, AdminAction action) throws Exception {
         String trimmed = text == null ? "" : text.trim();
         switch (action) {
@@ -489,6 +500,20 @@ public class MainBot extends TelegramLongPollingBot {
     private String formatDate(java.time.LocalDateTime dt) {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
         return dt == null ? "-" : dt.format(fmt);
+    }
+
+    private void handlePlanPurchase(Long chatId, String callbackId, org.telegram.telegrambots.meta.api.objects.User from,
+                                    int days, int price, String label) throws Exception {
+        User user = userService.registerOrUpdate(from);
+        if (!guardIdempotency(chatId, "plan:" + days + ":" + user.getId(), Duration.ofSeconds(10), callbackId)) {
+            return;
+        }
+        Subscription sub = subscriptionService.extendSubscription(user, days);
+        String msg = "✅ Подписка на " + label + " оформлена.\n" +
+                "💰 Стоимость: " + price + "₽\n" +
+                "🗓 Действует до: " + formatDate(sub.getEndDate());
+        execute(simpleMessage(chatId, msg));
+        execute(botMenuService.subscriptionMenu(chatId));
     }
 
 }

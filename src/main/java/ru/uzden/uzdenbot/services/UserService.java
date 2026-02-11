@@ -1,6 +1,7 @@
 package ru.uzden.uzdenbot.services;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.uzden.uzdenbot.entities.User;
@@ -20,10 +21,6 @@ public class UserService {
         Long telegramId = tgUser.getId();
         String username = tgUser.getUserName();
 
-        if (userRepository.findUserByTelegramId(telegramId).isPresent()) {
-
-        }
-
         return userRepository.findUserByTelegramId(telegramId)
                 .map(u -> {
                     if (username != null && !username.equals(u.getUsername())) {
@@ -35,7 +32,12 @@ public class UserService {
                     u.setTelegramId(telegramId);
                     u.setUsername(username);
                     u.setCreatedAt(LocalDateTime.now());
-                    return userRepository.save(u);
+                    try {
+                        return userRepository.save(u);
+                    } catch (DataIntegrityViolationException e) {
+                        return userRepository.findUserByTelegramId(telegramId)
+                                .orElseThrow(() -> e);
+                    }
                 });
     }
 
