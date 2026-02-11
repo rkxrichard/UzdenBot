@@ -1,0 +1,59 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vpn_bot
+    username: vpn_user
+    password: vpn_pass
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:supersecret123}
+      timeout: 2s
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+logging:
+  level:
+    org.springframework.boot.autoconfigure: DEBUG
+    org.springframework.boot.context.config: DEBUG
+
+app:
+  rate-limit:
+    window-seconds: 3
+    max-requests: 3
+  idempotency:
+    ttl-seconds: 10
+
+telegram:
+  bot:
+    token: ${TELEGRAM_BOT_TOKEN}
+    username: ${TELEGRAM_BOT_USERNAME}
+  admin-ids: "980389038,592239190"
+  main-menu-text: |-
+    Добро пожаловать в RedCastle! 👋
+
+    RedCastle — ваш удобный сервис в Telegram для управления подпиской и доступом в пару нажатий. ✨
+
+    Выберите раздел ниже. 👇
+
+xui:
+  inbound-id: 1
+  public-host: 46.226.164.227
+  public-port: 443
+  link-tag: reality443-auto
+  # base-url: ${XUI_BASE_URL}
+  # base-path: ${XUI_BASE_PATH}
+  # username: ${XUI_USERNAME}
+  # password: ${XUI_PASSWORD}
+  base-url: http://46.226.164.227:8080
+  base-path: /hzxIlrhXF2GmPjywyD/
+  username: ibragim
+  password: xasuev9595
+
+reality-public-key: zaz32XFf8CdLqgjovVymvI0sEEEDr5eS0Gy8Jua8OFQ

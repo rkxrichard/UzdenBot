@@ -15,6 +15,7 @@ import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.services.*;
 
 import java.time.format.DateTimeFormatter;
+import java.time.Duration;
 import java.util.Optional;
 
 @Slf4j
@@ -27,6 +28,8 @@ public class MainBot extends TelegramLongPollingBot {
     private final UserService userService;
     private final SubscriptionService subscriptionService;
     private final VpnKeyService vpnKeyService;
+    private final RateLimiterService rateLimiterService;
+    private final IdempotencyService idempotencyService;
 
     private final String token;
     private final String username;
@@ -39,6 +42,8 @@ public class MainBot extends TelegramLongPollingBot {
             UserService userService,
             SubscriptionService subscriptionService,
             VpnKeyService vpnKeyService,
+            RateLimiterService rateLimiterService,
+            IdempotencyService idempotencyService,
             @Value("${telegram.bot.token}") String token,
             @Value("${telegram.bot.username}")String username) {
         this.botMenuService = botMenuService;
@@ -47,6 +52,8 @@ public class MainBot extends TelegramLongPollingBot {
         this.userService = userService;
         this.subscriptionService = subscriptionService;
         this.vpnKeyService = vpnKeyService;
+        this.rateLimiterService = rateLimiterService;
+        this.idempotencyService = idempotencyService;
         this.token = token;
         this.username = username;
     }
@@ -64,6 +71,30 @@ public class MainBot extends TelegramLongPollingBot {
     @Override
     public void onUpdateReceived(Update update) {
         try {
+            Long rateChatId = null;
+            Long rateUserId = null;
+            String rateCallbackId = null;
+            if (update.hasMessage() && update.getMessage().getFrom() != null) {
+                rateChatId = update.getMessage().getChatId();
+                rateUserId = update.getMessage().getFrom().getId();
+            } else if (update.hasCallbackQuery() && update.getCallbackQuery().getFrom() != null) {
+                rateChatId = update.getCallbackQuery().getMessage().getChatId();
+                rateUserId = update.getCallbackQuery().getFrom().getId();
+                rateCallbackId = update.getCallbackQuery().getId();
+            }
+
+            if (rateUserId != null && rateChatId != null) {
+                try {
+                    String key = "rl:user:" + rateUserId;
+                    if (!rateLimiterService.allow(key)) {
+                        denyRateLimit(rateChatId, rateCallbackId);
+                        return;
+                    }
+                } catch (Exception e) {
+                    log.warn("Rate limit check failed: {}", e.getMessage());
+                }
+            }
+
             if(update.hasMessage() && update.getMessage().hasText()) {
                 String text = update.getMessage().getText();
                 Long chatId = update.getMessage().getChatId();
@@ -133,6 +164,9 @@ public class MainBot extends TelegramLongPollingBot {
                         // ПОТОМ ДОБАВИТЬ РЕАЛИЗАЦИЮ СМЕНЫ (КУПИТЬ/ПРОДЛИТЬ)
                         // да и впринципе добавить реаллизацию оплаты через Юкассу
                         user = userService.registerOrUpdate(cq.getFrom());
+                        if (!guardIdempotency(chatId, "buy:" + user.getId(), Duration.ofSeconds(10), cq.getId())) {
+                            return;
+                        }
                         subscriptionService.extendSubscription(user, 30);
                         execute(simpleMessage(chatId,"✅ Подписка продлена на 30 дней"));
                         execute(botMenuService.subscriptionMenu(chatId));
@@ -148,6 +182,9 @@ public class MainBot extends TelegramLongPollingBot {
                         }
 
                         try {
+                            if (!guardIdempotency(chatId, "get_key:" + user.getId(), Duration.ofSeconds(10), cq.getId())) {
+                                return;
+                            }
                             var key = vpnKeyService.issueKey(user);
                             String msg = "🔑 Ваш VPN-ключ:\n\n" +
                                     "<code>" + escapeHtml(key.getKeyValue()) + "</code>\n\n" +
@@ -177,6 +214,9 @@ public class MainBot extends TelegramLongPollingBot {
                         }
 
                         try {
+                            if (!guardIdempotency(chatId, "replace_key:" + user.getId(), Duration.ofSeconds(10), cq.getId())) {
+                                return;
+                            }
                             var key = vpnKeyService.replaceKey(user);
                             String msg = "🔄 Ваш VPN-ключ заменён. Новый ключ:\n\n" +
                                     "<code>" + escapeHtml(key.getKeyValue()) + "</code>\n\n" +
@@ -257,6 +297,41 @@ public class MainBot extends TelegramLongPollingBot {
                 .text(sm.getText())
                 .replyMarkup((InlineKeyboardMarkup) sm.getReplyMarkup())
                 .build());
+    }
+
+    private void denyRateLimit(Long chatId, String callbackId) throws Exception {
+        if (callbackId != null) {
+            execute(AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackId)
+                    .text("Слишком часто. Подождите пару секунд.")
+                    .showAlert(false)
+                    .build());
+        } else if (chatId != null) {
+            execute(simpleMessage(chatId, "Слишком часто. Подождите пару секунд."));
+        }
+    }
+
+    private boolean guardIdempotency(Long chatId, String key, Duration ttl, String callbackId) throws Exception {
+        String redisKey = "idemp:" + key;
+        try {
+            if (idempotencyService.tryAcquire(redisKey, ttl)) {
+                return true;
+            }
+        } catch (Exception e) {
+            log.warn("Idempotency check failed: {}", e.getMessage());
+            return true;
+        }
+
+        if (callbackId != null) {
+            execute(AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackId)
+                    .text("Запрос уже выполняется. Подождите немного.")
+                    .showAlert(false)
+                    .build());
+        } else if (chatId != null) {
+            execute(simpleMessage(chatId, "Запрос уже выполняется. Подождите немного."));
+        }
+        return false;
     }
 
     private void handleAdminInput(Long chatId, String text, AdminAction action) throws Exception {
