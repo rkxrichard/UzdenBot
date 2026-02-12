@@ -30,6 +30,9 @@ app:
   idempotency:
     ttl-seconds: 10
     update-ttl-seconds: 600
+  vpn-keys:
+    unused-ttl-hours: 24
+    cleanup-delay-ms: 3600000
 
 telegram:
   bot:

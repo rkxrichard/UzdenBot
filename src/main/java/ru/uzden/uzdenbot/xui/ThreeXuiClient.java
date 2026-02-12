@@ -1,5 +1,7 @@
 package ru.uzden.uzdenbot.xui;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -14,6 +16,7 @@ import ru.uzden.uzdenbot.config.XuiProperties;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.OptionalLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -25,6 +28,7 @@ public class ThreeXuiClient {
 
     private final RestClient rest;
     private final XuiProperties props;
+    private final ObjectMapper objectMapper;
     private final String normalizedBaseUrl;
     private final String normalizedBasePath;
 
@@ -58,8 +62,9 @@ public class ThreeXuiClient {
             "/panel/api/inbounds/updateClient/%s/"
     );
 
-    public ThreeXuiClient(RestClient.Builder builder, XuiProperties props) {
+    public ThreeXuiClient(RestClient.Builder builder, XuiProperties props, ObjectMapper objectMapper) {
         this.props = props;
+        this.objectMapper = objectMapper;
 
         // Нормализация конфига: часто base-url и base-path путают местами.
         String bu = Objects.requireNonNull(props.baseUrl(), "xui.base-url is required").trim();
@@ -233,6 +238,32 @@ public class ThreeXuiClient {
         throw new IllegalStateException("No getInbound endpoint candidates matched");
     }
 
+    /**
+     * Возвращает суммарный трафик (up+down) для клиента, если найден.
+     * Если статистика отсутствует, вернёт empty.
+     */
+    public OptionalLong getClientTraffic(long inboundId, UUID clientUuid, String email) {
+        String inbound = getInbound(inboundId);
+        if (inbound == null || inbound.isBlank()) return OptionalLong.empty();
+        try {
+            JsonNode root = objectMapper.readTree(inbound);
+            JsonNode stats = extractClientStatsNode(root);
+            if (stats == null || !stats.isArray()) return OptionalLong.empty();
+            String uuid = clientUuid == null ? null : clientUuid.toString();
+            for (JsonNode node : stats) {
+                if (!matchesClient(node, uuid, email)) continue;
+                long up = node.path("up").asLong(0);
+                long down = node.path("down").asLong(0);
+                long total = node.path("total").asLong(0);
+                long traffic = Math.max(up + down, total);
+                return OptionalLong.of(traffic);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse client stats: {}", e.getMessage());
+        }
+        return OptionalLong.empty();
+    }
+
     /* ============================ helpers ============================ */
 
     /**
@@ -248,6 +279,32 @@ public class ThreeXuiClient {
         String uuid = clientUuid == null ? null : clientUuid.toString();
         if (uuid == null || uuid.isBlank()) return false;
         return inbound.contains(uuid) && (email == null || email.isBlank() || inbound.contains(email));
+    }
+
+    private static JsonNode extractClientStatsNode(JsonNode root) {
+        if (root == null || root.isMissingNode()) return null;
+        if (root.has("clientStats")) return root.get("clientStats");
+        if (root.has("obj") && root.get("obj").has("clientStats")) return root.get("obj").get("clientStats");
+        if (root.has("data") && root.get("data").has("clientStats")) return root.get("data").get("clientStats");
+        return null;
+    }
+
+    private static boolean matchesClient(JsonNode node, String uuid, String email) {
+        if (node == null || node.isMissingNode()) return false;
+        if (uuid != null && !uuid.isBlank()) {
+            String id = node.path("id").asText(null);
+            String clientId = node.path("clientId").asText(null);
+            String clientIdAlt = node.path("client_id").asText(null);
+            String uuidField = node.path("uuid").asText(null);
+            if (uuid.equals(id) || uuid.equals(clientId) || uuid.equals(clientIdAlt) || uuid.equals(uuidField)) {
+                return true;
+            }
+        }
+        if (email != null && !email.isBlank()) {
+            String nodeEmail = node.path("email").asText(null);
+            return email.equalsIgnoreCase(nodeEmail);
+        }
+        return false;
     }
 
     private static boolean looksLikeFullInbound(String inboundJson) {
