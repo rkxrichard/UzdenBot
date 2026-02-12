@@ -54,7 +54,7 @@ class BotUpdateHandlerTest {
 
         SendMessage menu = SendMessage.builder().chatId("1").text("main").build();
         when(botMenuService.mainMenu(eq(1L), eq(false))).thenReturn(menu);
-        SendMessage cmd = SendMessage.builder().chatId("1").text(" ").build();
+        SendMessage cmd = SendMessage.builder().chatId("1").text("\u200B").build();
         when(botMenuService.commandKeyboardMessage(eq(1L), eq(false))).thenReturn(cmd);
 
         Update update = messageUpdate(1L, 100L, "/start");
@@ -64,7 +64,7 @@ class BotUpdateHandlerTest {
         SendMessage out = (SendMessage) result.get(0);
         SendMessage out2 = (SendMessage) result.get(1);
         assertEquals("main", out.getText());
-        assertEquals(" ", out2.getText());
+        assertEquals("\u200B", out2.getText());
     }
 
     @Test

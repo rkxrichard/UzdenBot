@@ -65,7 +65,7 @@ public class BotMenuService {
     public SendMessage commandKeyboardMessage(Long chatId, boolean isAdmin) {
         return SendMessage.builder()
                 .chatId(chatId.toString())
-                .text(" ")
+                .text("\u200B")
                 .replyMarkup(buildCommandKeyboard(isAdmin))
                 .build();
     }
