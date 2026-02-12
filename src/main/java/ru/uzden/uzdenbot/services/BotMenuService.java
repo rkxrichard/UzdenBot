@@ -5,12 +5,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,15 +35,15 @@ public class BotMenuService {
 
     public SendMessage mainMenu(Long chatId, boolean isAdmin) {
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text("Подписка")
+                .text("📦 Подписка и тарифы")
                 .callbackData("MENU_SUBSCRIPTION")
                 .build();
         InlineKeyboardButton bAdmin = InlineKeyboardButton.builder()
-                .text("Админка")
+                .text("🛠 Админ‑панель")
                 .callbackData("MENU_ADMIN")
                 .build();
         InlineKeyboardButton bHelp = InlineKeyboardButton.builder()
-                .text("Инструкция")
+                .text("📘 Инструкция")
                 .callbackData("MENU_HELP")
                 .build();
 
@@ -58,9 +62,17 @@ public class BotMenuService {
                 .build();
     }
 
+    public SendMessage commandKeyboardMessage(Long chatId, boolean isAdmin) {
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(" ")
+                .replyMarkup(buildCommandKeyboard(isAdmin))
+                .build();
+    }
+
     public SendMessage adminMenu(Long chatId) {
         InlineKeyboardButton bAddSub = InlineKeyboardButton.builder()
-                .text("➕ Добавить подписку")
+                .text("➕ Выдать подписку")
                 .callbackData("ADMIN_ADD_SUB")
                 .build();
         InlineKeyboardButton bCheckSub = InlineKeyboardButton.builder()
@@ -72,15 +84,15 @@ public class BotMenuService {
                 .callbackData("ADMIN_REVOKE_SUB")
                 .build();
         InlineKeyboardButton bDisableUser = InlineKeyboardButton.builder()
-                .text("🚫 Отключить пользователя")
+                .text("🚫 Заблокировать пользователя")
                 .callbackData("ADMIN_DISABLE_USER")
                 .build();
         InlineKeyboardButton bEnableUser = InlineKeyboardButton.builder()
-                .text("✅ Включить пользователя")
+                .text("✅ Разблокировать пользователя")
                 .callbackData("ADMIN_ENABLE_USER")
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
@@ -104,7 +116,7 @@ public class BotMenuService {
 
     public SendMessage instructionsMenu(Long chatId) {
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
@@ -126,7 +138,7 @@ public class BotMenuService {
         Optional<Subscription> activeSubOpt = subscriptionService.getActiveSubscription(user);
 
         boolean isActive = activeSubOpt.isPresent();
-        String buyOrExtendText = isActive ? "Продлить подписку" : "Купить подписку";
+        String buyOrExtendText = isActive ? "🔁 Продлить подписку" : "💳 Купить подписку";
         String menuText = buildSubscriptionMenuText(activeSubOpt);
 
         InlineKeyboardButton bBuy = InlineKeyboardButton.builder()
@@ -135,12 +147,12 @@ public class BotMenuService {
                 .build();
 
         InlineKeyboardButton bGetKey = InlineKeyboardButton.builder()
-                .text("Получить ключ")
+                .text("🔑 Получить ключ")
                 .callbackData("MENU_GET_KEY")
                 .build();
 
         InlineKeyboardButton bReplaceKey = InlineKeyboardButton.builder()
-                .text("Заменить ключ")
+                .text("♻️ Заменить ключ")
                 .callbackData("MENU_REPLACE_KEY")
                 .build();
 
@@ -150,7 +162,7 @@ public class BotMenuService {
 //                .build();
 
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
@@ -197,30 +209,33 @@ public class BotMenuService {
         Plan p12 = new Plan(12, 1199);
 
         String text = baseText + "\n\n" +
-                "💳 Выберите срок подписки:\n" +
+                "💳 Тарифы\n" +
+                "━━━━━━━━━━━━\n" +
+                "Выберите срок — подписка активируется или продлевается сразу.\n\n" +
                 "• 1 месяц — 199₽\n" +
                 "• 3 месяца — 399₽ (скидка " + discountPercent(baseMonthlyPrice, p3) + "%)\n" +
                 "• 6 месяцев — 699₽ (скидка " + discountPercent(baseMonthlyPrice, p6) + "%)\n" +
-                "• 12 месяцев — 1199₽ (скидка " + discountPercent(baseMonthlyPrice, p12) + "%)";
+                "• 12 месяцев — 1199₽ (скидка " + discountPercent(baseMonthlyPrice, p12) + "%)\n\n" +
+                "⭐ Самый выгодный вариант — 12 месяцев.";
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text("1 месяц — 199₽")
+                .text("💳 1 месяц — 199₽")
                 .callbackData("BUY_1M")
                 .build();
         InlineKeyboardButton b3 = InlineKeyboardButton.builder()
-                .text("3 месяца — 399₽ (" + discountPercent(baseMonthlyPrice, p3) + "%)")
+                .text("🔥 3 месяца — 399₽ (" + discountPercent(baseMonthlyPrice, p3) + "%)")
                 .callbackData("BUY_3M")
                 .build();
         InlineKeyboardButton b6 = InlineKeyboardButton.builder()
-                .text("6 месяцев — 699₽ (" + discountPercent(baseMonthlyPrice, p6) + "%)")
+                .text("⭐ 6 месяцев — 699₽ (" + discountPercent(baseMonthlyPrice, p6) + "%)")
                 .callbackData("BUY_6M")
                 .build();
         InlineKeyboardButton b12 = InlineKeyboardButton.builder()
-                .text("12 месяцев — 1199₽ (" + discountPercent(baseMonthlyPrice, p12) + "%)")
+                .text("👑 12 месяцев — 1199₽ (" + discountPercent(baseMonthlyPrice, p12) + "%)")
                 .callbackData("BUY_12M")
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_SUBSCRIPTION")
                 .build();
 
@@ -244,8 +259,10 @@ public class BotMenuService {
     private String buildSubscriptionMenuText(Optional<Subscription> activeSubOpt) {
         if (activeSubOpt.isEmpty()) {
             return "📦 Подписка\n\n" +
-                    "❌ Активной подписки нет.\n" +
-                    "Нажмите «Купить подписку», чтобы оформить.";
+                    "━━━━━━━━━━━━\n" +
+                    "Статус: нет активной подписки\n" +
+                    "Выберите срок ниже и оформите покупку.\n" +
+                    "После оформления сможете получить ключ.";
         }
 
         Subscription sub = activeSubOpt.get();
@@ -255,9 +272,11 @@ public class BotMenuService {
         String until = sub.getEndDate().format(DT_FMT);
 
         return "📦 Подписка\n\n" +
-                "✅ Активна\n" +
+                "━━━━━━━━━━━━\n" +
+                "Статус: активна\n" +
                 "⏳ Осталось: " + formatDaysLeft(daysLeft) + "\n" +
-                "🗓 Действует до: " + until;
+                "🗓 Действует до: " + until + "\n" +
+                "Управление ключом и продление — ниже.";
     }
 
     private String formatDaysLeft(long daysLeft) {
@@ -286,6 +305,25 @@ public class BotMenuService {
         double discount = 100.0 - (plan.price / baseTotal) * 100.0;
         int rounded = (int) Math.round(discount / 5.0) * 5;
         return Math.max(0, rounded);
+    }
+
+    private ReplyKeyboardMarkup buildCommandKeyboard(boolean isAdmin) {
+        List<KeyboardRow> rows = new ArrayList<>();
+        KeyboardRow row1 = new KeyboardRow();
+        row1.add(KeyboardButton.builder().text("/start").build());
+        rows.add(row1);
+
+        if (isAdmin) {
+            KeyboardRow row2 = new KeyboardRow();
+            row2.add(KeyboardButton.builder().text("/admin").build());
+            row2.add(KeyboardButton.builder().text("/cancel").build());
+            rows.add(row2);
+        }
+
+        return ReplyKeyboardMarkup.builder()
+                .keyboard(rows)
+                .resizeKeyboard(true)
+                .build();
     }
 
     private static final class Plan {

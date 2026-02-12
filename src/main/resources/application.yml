@@ -45,9 +45,10 @@ telegram:
     Выберите раздел ниже. 👇
 
   instructions-text: |-
-    📌 Инструкция подключения
-
-    💡 Ключ начинается с vless:// — просто скопируйте его.
+    📘 Инструкция подключения
+    ━━━━━━━━━━━━
+    🔑 Где взять ключ: меню «Подписка и тарифы» → «Получить ключ»
+    📌 Ключ начинается с vless:// — копируйте его полностью
 
     📱 iPhone (v2rayTun):
     1) Скопируйте ключ
@@ -59,7 +60,7 @@ telegram:
     2) Откройте Happ → Добавить/Импорт → Из буфера обмена
     3) Сохраните и включите
 
-    Если импорт не появился, вставьте ключ вручную через «Добавить».
+    ❗️Если импорт не появился, вставьте ключ вручную через «Добавить».
 
 xui:
   inbound-id: 1
@@ -74,5 +75,12 @@ xui:
   base-path: /hzxIlrhXF2GmPjywyD/
   username: ibragim
   password: xasuev9595
+
+yookassa:
+  shop-id: ${YOOKASSA_SHOP_ID:YOUR_SHOP_ID}
+  secret-key: "${YOOKASSA_SECRET_KEY:test_*gmOV4JvrEeg-wEZauyk9nhZvUgM1nZJf98h7L4wrbDDYtest_*gmOV4JvrEeg-wEZauyk9nhZvUgM1nZJf98h7L4wrbDDY}"
+  api-base: https://api.yookassa.ru/v3
+  return-url: "${YOOKASSA_RETURN_URL:https://t.me/${telegram.bot.username}}"
+  webhook-secret: ${YOOKASSA_WEBHOOK_SECRET:}
 
 reality-public-key: zaz32XFf8CdLqgjovVymvI0sEEEDr5eS0Gy8Jua8OFQ
