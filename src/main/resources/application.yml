@@ -33,6 +33,8 @@ app:
   vpn-keys:
     unused-ttl-hours: 24
     cleanup-delay-ms: 3600000
+  subscriptions:
+    notify-delay-ms: 3600000
 
 telegram:
   bot:

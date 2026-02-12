@@ -62,6 +62,12 @@ public class SubscriptionService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public Optional<Subscription> getLastSubscription(User user) {
+        if (user == null) return Optional.empty();
+        return subscriptionRepository.findTopByUserOrderByEndDateDesc(user);
+    }
+
     @Transactional
     public Optional<Subscription> revokeActiveSubscription(User user) {
         if (user == null || user.getId() == null) {

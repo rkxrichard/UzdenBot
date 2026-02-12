@@ -161,6 +161,32 @@ public class VpnKeyService {
         return ok;
     }
 
+    /**
+     * Удалить все отключённые ключи (revoked/REVOKED).
+     * Возвращает количество удалённых записей.
+     */
+    public int purgeRevokedKeys() {
+        List<VpnKey> revoked = vpnKeyRepository.findRevokedKeys();
+        if (revoked.isEmpty()) {
+            return 0;
+        }
+        for (VpnKey key : revoked) {
+            try {
+                if (key.getInboundId() != null && key.getClientUuid() != null) {
+                    xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                }
+            } catch (Exception e) {
+                log.warn("Не удалось выключить клиента keyId={}: {}", key.getId(), safeMsg(e));
+            }
+        }
+        List<Long> ids = revoked.stream().map(VpnKey::getId).toList();
+        tx.execute(status -> {
+            vpnKeyRepository.deleteAllByIdInBatch(ids);
+            return null;
+        });
+        return ids.size();
+    }
+
 
 
     /**==========================================================

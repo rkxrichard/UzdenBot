@@ -31,6 +31,12 @@ public class Subscription {
     @Column(name = "is_active", nullable = false)
     private boolean isActive;
 
+    @Column(name = "notified_two_days_at")
+    private Instant notifiedTwoDaysAt;
+
+    @Column(name = "notified_one_day_at")
+    private Instant notifiedOneDayAt;
+
     @PrePersist
     public void prePersist() {
         if (createdAt == null) createdAt = Instant.now();

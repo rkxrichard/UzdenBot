@@ -59,4 +59,12 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
            order by k.createdAt asc
            """)
     List<VpnKey> findPendingOrFailedOlderThan(@Param("border") Instant border);
+
+    @Query("""
+           select k from VpnKey k
+           where k.revoked = true
+              or k.status = ru.uzden.uzdenbot.entities.VpnKey$Status.REVOKED
+           order by k.createdAt asc
+           """)
+    List<VpnKey> findRevokedKeys();
 }

@@ -8,6 +8,8 @@ import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.utils.BotMessageFactory;
 import ru.uzden.uzdenbot.utils.BotTextUtils;
@@ -162,6 +164,41 @@ public class BotUpdateHandler {
                     adminStateService.set(chatId, AdminAction.ENABLE_USER);
                     out.add(BotMessageFactory.simpleMessage(chatId,
                             "Отправьте @username, чтобы включить пользователя.\n\n/cancel — отмена."));
+                }
+            }
+            case "ADMIN_PURGE_DISABLED_KEYS" -> {
+                if (isAdmin) {
+                    InlineKeyboardButton bYes = InlineKeyboardButton.builder()
+                            .text("✅ Да, удалить")
+                            .callbackData("ADMIN_PURGE_DISABLED_CONFIRM")
+                            .build();
+                    InlineKeyboardButton bNo = InlineKeyboardButton.builder()
+                            .text("✖️ Отмена")
+                            .callbackData("ADMIN_PURGE_DISABLED_CANCEL")
+                            .build();
+                    InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
+                            .keyboard(List.of(List.of(bYes, bNo)))
+                            .build();
+                    SendMessage sm = SendMessage.builder()
+                            .chatId(chatId.toString())
+                            .text("Удалить все отключённые ключи? Действие необратимо.")
+                            .replyMarkup(markup)
+                            .build();
+                    out.add(sm);
+                }
+            }
+            case "ADMIN_PURGE_DISABLED_CONFIRM" -> {
+                if (isAdmin) {
+                    int removed = vpnKeyService.purgeRevokedKeys();
+                    String msg = removed == 0
+                            ? "🧹 Отключённых ключей для удаления нет."
+                            : "🧹 Удалено отключённых ключей: " + removed;
+                    out.add(BotMessageFactory.simpleMessage(chatId, msg));
+                }
+            }
+            case "ADMIN_PURGE_DISABLED_CANCEL" -> {
+                if (isAdmin) {
+                    out.add(BotMessageFactory.simpleMessage(chatId, "Отменено."));
                 }
             }
             default -> {

@@ -13,6 +13,7 @@ import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -91,6 +92,10 @@ public class BotMenuService {
                 .text("✅ Разблокировать пользователя")
                 .callbackData("ADMIN_ENABLE_USER")
                 .build();
+        InlineKeyboardButton bPurgeDisabled = InlineKeyboardButton.builder()
+                .text("🧹 Удалить отключённых клиентов")
+                .callbackData("ADMIN_PURGE_DISABLED_KEYS")
+                .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
                 .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
@@ -103,6 +108,7 @@ public class BotMenuService {
                         List.of(bRevokeSub),
                         List.of(bDisableUser),
                         List.of(bEnableUser),
+                        List.of(bPurgeDisabled),
                         List.of(bBack)
                 ))
                 .build();
@@ -136,10 +142,16 @@ public class BotMenuService {
                 .orElseThrow(() -> new IllegalStateException("User not found for chatId: " + chatId));
 
         Optional<Subscription> activeSubOpt = subscriptionService.getActiveSubscription(user);
+        Optional<Subscription> lastSubOpt = subscriptionService.getLastSubscription(user);
 
         boolean isActive = activeSubOpt.isPresent();
-        String buyOrExtendText = isActive ? "🔁 Продлить подписку" : "💳 Купить подписку";
-        String menuText = buildSubscriptionMenuText(activeSubOpt);
+        boolean wasExpired = !isActive && lastSubOpt.isPresent()
+                && lastSubOpt.get().getEndDate() != null
+                && lastSubOpt.get().getEndDate().isBefore(LocalDateTime.now());
+        String buyOrExtendText = isActive
+                ? "🔁 Продлить подписку"
+                : (wasExpired ? "🔁 Возобновить подписку" : "💳 Купить подписку");
+        String menuText = buildSubscriptionMenuText(activeSubOpt, lastSubOpt);
 
         InlineKeyboardButton bBuy = InlineKeyboardButton.builder()
                 .text(buyOrExtendText)
@@ -200,7 +212,8 @@ public class BotMenuService {
         User user = userRepository.findUserByTelegramId(chatId)
                 .orElseThrow(() -> new IllegalStateException("User not found for chatId: " + chatId));
         Optional<Subscription> activeSubOpt = subscriptionService.getActiveSubscription(user);
-        String baseText = buildSubscriptionMenuText(activeSubOpt);
+        Optional<Subscription> lastSubOpt = subscriptionService.getLastSubscription(user);
+        String baseText = buildSubscriptionMenuText(activeSubOpt, lastSubOpt);
 
         int baseMonthlyPrice = 199;
         Plan p1 = new Plan(1, 199);
@@ -256,8 +269,17 @@ public class BotMenuService {
                 .build();
     }
 
-    private String buildSubscriptionMenuText(Optional<Subscription> activeSubOpt) {
+    private String buildSubscriptionMenuText(Optional<Subscription> activeSubOpt, Optional<Subscription> lastSubOpt) {
         if (activeSubOpt.isEmpty()) {
+            if (lastSubOpt.isPresent() && lastSubOpt.get().getEndDate() != null
+                    && lastSubOpt.get().getEndDate().isBefore(LocalDateTime.now())) {
+                String endedAt = lastSubOpt.get().getEndDate().format(DT_FMT);
+                return "📦 Подписка\n\n" +
+                        "━━━━━━━━━━━━\n" +
+                        "Статус: истекла\n" +
+                        "🗓 Закончилась: " + endedAt + "\n" +
+                        "Возобновите подписку, чтобы снова получить доступ.";
+            }
             return "📦 Подписка\n\n" +
                     "━━━━━━━━━━━━\n" +
                     "Статус: нет активной подписки\n" +
