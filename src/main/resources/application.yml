@@ -35,6 +35,8 @@ app:
     cleanup-delay-ms: 3600000
   subscriptions:
     notify-delay-ms: 3600000
+  payments:
+    reconcile-delay-ms: 60000
   subscription-plans:
     plan1:
       months: 1

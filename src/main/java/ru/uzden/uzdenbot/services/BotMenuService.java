@@ -27,6 +27,7 @@ public class BotMenuService {
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
     private final SubscriptionPlansProperties subscriptionPlansProperties;
+    private final PaymentService paymentService;
 
     @Value("${telegram.main-menu-text:Добро пожаловать в Uzden.\\n\\nЗдесь всё просто: управляйте подпиской и получайте доступ к сервису в пару нажатий.\\n\\nВыберите нужный раздел ниже.}")
     private String mainMenuText;
@@ -143,6 +144,8 @@ public class BotMenuService {
         User user = userRepository.findUserByTelegramId(chatId)
                 .orElseThrow(() -> new IllegalStateException("User not found for chatId: " + chatId));
 
+        reconcileUserPaymentsSafe(user);
+
         Optional<Subscription> activeSubOpt = subscriptionService.getActiveSubscription(user);
         Optional<Subscription> lastSubOpt = subscriptionService.getLastSubscription(user);
 
@@ -213,6 +216,7 @@ public class BotMenuService {
     public SendMessage subscriptionPlanMenu(Long chatId) {
         User user = userRepository.findUserByTelegramId(chatId)
                 .orElseThrow(() -> new IllegalStateException("User not found for chatId: " + chatId));
+        reconcileUserPaymentsSafe(user);
         Optional<Subscription> activeSubOpt = subscriptionService.getActiveSubscription(user);
         Optional<Subscription> lastSubOpt = subscriptionService.getLastSubscription(user);
         String baseText = buildSubscriptionMenuText(activeSubOpt, lastSubOpt);
@@ -322,6 +326,14 @@ public class BotMenuService {
     private String normalizeLabel(String label, String fallback) {
         if (label == null || label.isBlank()) return fallback;
         return label;
+    }
+
+    private void reconcileUserPaymentsSafe(User user) {
+        try {
+            paymentService.reconcileUserPayments(user);
+        } catch (Exception ignored) {
+            // Do not block menu rendering if reconciliation fails
+        }
     }
 
     private ReplyKeyboardMarkup buildCommandKeyboard(boolean isAdmin) {

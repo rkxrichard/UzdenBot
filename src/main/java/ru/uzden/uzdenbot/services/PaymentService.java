@@ -3,6 +3,7 @@ package ru.uzden.uzdenbot.services;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.uzden.uzdenbot.entities.Payment;
@@ -83,32 +84,81 @@ public class PaymentService {
             return;
         }
 
-        Payment payment = paymentOpt.get();
-        YooKassaPayment verified = yooKassaClient.getPayment(payload.getId());
-        if (verified == null) {
-            log.warn("Verification failed for paymentId={}", payload.getId());
-            return;
-        }
+        YooKassaPayment verified = fetchVerifiedPayment(payload.getId(), "webhook");
+        Payment payment = paymentRepository.lockById(paymentOpt.get().getId());
+        processVerifiedPayment(payment, verified, "webhook");
+    }
 
+    @Transactional
+    @Scheduled(fixedDelayString = "${app.payments.reconcile-delay-ms:60000}")
+    public void reconcilePendingPayments() {
+        var pending = paymentRepository.findTop100ByProcessedAtIsNullAndProviderOrderByCreatedAtAsc(PROVIDER);
+        for (Payment payment : pending) {
+            if (payment.getProviderPaymentId() == null || payment.getProviderPaymentId().isBlank()) {
+                continue;
+            }
+            YooKassaPayment verified = fetchVerifiedPayment(payment.getProviderPaymentId(), "reconcile");
+            Payment locked = paymentRepository.lockById(payment.getId());
+            processVerifiedPayment(locked, verified, "reconcile");
+        }
+    }
+
+    @Transactional
+    public int reconcileUserPayments(User user) {
+        if (user == null || user.getId() == null) return 0;
+        var pending = paymentRepository.findTop5ByUserAndProcessedAtIsNullAndProviderOrderByCreatedAtDesc(user, PROVIDER);
+        int processed = 0;
+        for (Payment payment : pending) {
+            if (payment.getProviderPaymentId() == null || payment.getProviderPaymentId().isBlank()) {
+                continue;
+            }
+            YooKassaPayment verified = fetchVerifiedPayment(payment.getProviderPaymentId(), "user-reconcile");
+            Payment locked = paymentRepository.lockById(payment.getId());
+            if (processVerifiedPayment(locked, verified, "user-reconcile")) {
+                processed++;
+            }
+        }
+        return processed;
+    }
+
+    private YooKassaPayment fetchVerifiedPayment(String paymentId, String source) {
+        try {
+            YooKassaPayment verified = yooKassaClient.getPayment(paymentId);
+            if (verified == null) {
+                log.warn("Verification failed for paymentId={} source={}", paymentId, source);
+            }
+            return verified;
+        } catch (Exception e) {
+            log.warn("Verification error for paymentId={} source={}: {}", paymentId, source, e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean processVerifiedPayment(Payment payment, YooKassaPayment verified, String source) {
+        if (payment == null || verified == null) return false;
+
+        if (payment.getProviderPaymentId() == null && verified.getId() != null) {
+            payment.setProviderPaymentId(verified.getId());
+        }
         payment.setStatus(verified.getStatus());
 
         if ("succeeded".equalsIgnoreCase(verified.getStatus())) {
             if (payment.getProcessedAt() != null) {
                 paymentRepository.save(payment);
-                return;
+                return false;
             }
 
             if (!amountMatches(payment, verified)) {
-                log.warn("Amount mismatch for paymentId={}", payload.getId());
+                log.warn("Amount mismatch for paymentId={} source={}", payment.getProviderPaymentId(), source);
                 paymentRepository.save(payment);
-                return;
+                return false;
             }
 
             int days = resolvePlanDays(payment, verified);
             if (days <= 0) {
-                log.warn("Plan days missing for paymentId={}", payload.getId());
+                log.warn("Plan days missing for paymentId={} source={}", payment.getProviderPaymentId(), source);
                 paymentRepository.save(payment);
-                return;
+                return false;
             }
 
             var sub = subscriptionService.extendSubscription(payment.getUser(), days);
@@ -124,13 +174,13 @@ public class PaymentService {
                     payment.getAmount(),
                     sub.getEndDate()
             ));
-            return;
+            return true;
         }
 
         if ("canceled".equalsIgnoreCase(verified.getStatus())) {
             if (payment.getProcessedAt() != null) {
                 paymentRepository.save(payment);
-                return;
+                return false;
             }
             payment.setProcessedAt(Instant.now());
             paymentRepository.save(payment);
@@ -143,10 +193,11 @@ public class PaymentService {
                     payment.getAmount(),
                     null
             ));
-            return;
+            return true;
         }
 
         paymentRepository.save(payment);
+        return false;
     }
 
     private YooKassaCreatePaymentRequest buildRequest(Payment payment, User user) {
