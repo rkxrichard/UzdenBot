@@ -71,7 +71,7 @@ public class PaymentNotificationListener {
 
     private void sendKeyIfPossible(User user) {
         try {
-            var key = vpnKeyService.issueKey(user);
+            var key = vpnKeyService.issueKeyAuto(user);
             String msg = "🔑 Ваш VPN-ключ:\n\n" +
                     "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
                     "📌 Скопируйте ссылку и импортируйте в клиент.";

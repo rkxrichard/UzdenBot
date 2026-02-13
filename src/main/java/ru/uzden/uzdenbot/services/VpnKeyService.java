@@ -88,6 +88,27 @@ public class VpnKeyService {
         return finalizeIssueOutsideTx(key.getId());
     }
 
+    /**
+     * Автовыдача ключа (после оплаты) без pessimistic-lock на user.
+     * Уменьшает риск ошибки "no active transaction" в фоновом обработчике.
+     */
+    public VpnKey issueKeyAuto(User user) {
+        if(!subscriptionService.hasActiveSubscription(user)) {
+            throw new IllegalStateException("Нет активной подписки");
+        }
+
+        VpnKey key = tx.execute(status -> createOrGetActiveOrPendingNoLock(user.getId()));
+
+        if (key.getStatus() == VpnKey.Status.ACTIVE && !key.isRevoked()) {
+            if (needsLinkRefresh(key)) {
+                return refreshActiveLink(key);
+            }
+            return key;
+        }
+
+        return finalizeIssueOutsideTx(key.getId());
+    }
+
 
     /**
      * Отозвать ключ
@@ -210,6 +231,19 @@ public class VpnKeyService {
         }
 
 
+    }
+
+    private VpnKey createOrGetActiveOrPendingNoLock(Long userId) {
+        Optional<VpnKey> existing = vpnKeyRepository.findActiveOrPending(userId);
+        if (existing.isPresent())
+            return existing.get();
+
+        try {
+            return vpnKeyRepository.save(buildPendingKey(userId));
+        } catch (DataIntegrityViolationException e) {
+            return vpnKeyRepository.findActiveOrPending(userId)
+                    .orElseThrow(() -> e);
+        }
     }
 
     private ReplaceContext replaceTx(Long userId) {
