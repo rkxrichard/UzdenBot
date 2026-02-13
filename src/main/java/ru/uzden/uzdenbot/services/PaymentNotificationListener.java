@@ -19,6 +19,7 @@ public class PaymentNotificationListener {
     private final MainBot mainBot;
     private final BotMenuService botMenuService;
     private final UserRepository userRepository;
+    private final VpnKeyService vpnKeyService;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPaymentStatus(PaymentService.PaymentStatusEvent event) {
@@ -33,6 +34,9 @@ public class PaymentNotificationListener {
         try {
             SendMessage statusMessage = buildStatusMessage(event);
             mainBot.execute(statusMessage);
+            if ("succeeded".equalsIgnoreCase(event.status())) {
+                sendKeyIfPossible(user);
+            }
             mainBot.execute(botMenuService.subscriptionMenu(event.telegramId()));
         } catch (Exception e) {
             log.warn("Failed to send payment notification for paymentId={}: {}", event.paymentId(), e.getMessage());
@@ -63,5 +67,30 @@ public class PaymentNotificationListener {
                 .chatId(event.telegramId().toString())
                 .text(text)
                 .build();
+    }
+
+    private void sendKeyIfPossible(User user) {
+        try {
+            var key = vpnKeyService.issueKey(user);
+            String msg = "🔑 Ваш VPN-ключ:\n\n" +
+                    "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
+                    "📌 Скопируйте ссылку и импортируйте в клиент.";
+            SendMessage sm = SendMessage.builder()
+                    .chatId(user.getTelegramId().toString())
+                    .text(msg)
+                    .parseMode("HTML")
+                    .build();
+            mainBot.execute(sm);
+        } catch (Exception e) {
+            String msg = "❌ Не удалось автоматически выдать ключ: " + e.getMessage();
+            SendMessage sm = SendMessage.builder()
+                    .chatId(user.getTelegramId().toString())
+                    .text(msg)
+                    .build();
+            try {
+                mainBot.execute(sm);
+            } catch (Exception ignored) {
+            }
+        }
     }
 }
