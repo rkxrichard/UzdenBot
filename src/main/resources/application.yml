@@ -37,6 +37,7 @@ app:
     notify-delay-ms: 3600000
   payments:
     reconcile-delay-ms: 60000
+    fast-check-delays-ms: 3000,8000,15000
   subscription-plans:
     plan1:
       months: 1

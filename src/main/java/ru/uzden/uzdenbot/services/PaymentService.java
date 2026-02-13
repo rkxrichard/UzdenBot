@@ -2,10 +2,13 @@ package ru.uzden.uzdenbot.services;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import ru.uzden.uzdenbot.entities.Payment;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.repositories.PaymentRepository;
@@ -21,6 +24,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +44,11 @@ public class PaymentService {
     private final YooKassaClient yooKassaClient;
     private final YooKassaProperties properties;
     private final ApplicationEventPublisher eventPublisher;
+    private final TaskScheduler taskScheduler;
+    private final TransactionTemplate tx;
+
+    @Value("${app.payments.fast-check-delays-ms:3000,8000,15000}")
+    private String fastCheckDelaysMs;
 
     @Transactional
     public PaymentInitResult createPayment(User user, int days, int price, String label) {
@@ -64,6 +75,7 @@ public class PaymentService {
                 payment.setConfirmationUrl(response.getConfirmation().getConfirmationUrl());
             }
             payment = paymentRepository.save(payment);
+            scheduleFastChecks(payment);
             return new PaymentInitResult(payment, payment.getConfirmationUrl());
         } catch (Exception e) {
             payment.setStatus("failed");
@@ -119,6 +131,59 @@ public class PaymentService {
             }
         }
         return processed;
+    }
+
+    private void scheduleFastChecks(Payment payment) {
+        if (payment == null || payment.getId() == null) return;
+        List<Long> delays = parseFastCheckDelays();
+        if (delays.isEmpty()) return;
+        for (Long delay : delays) {
+            if (delay == null || delay <= 0) continue;
+            taskScheduler.schedule(
+                    () -> reconcilePaymentFast(payment.getId()),
+                    Instant.now().plusMillis(delay)
+            );
+        }
+    }
+
+    private List<Long> parseFastCheckDelays() {
+        if (fastCheckDelaysMs == null || fastCheckDelaysMs.isBlank()) {
+            return Collections.emptyList();
+        }
+        String[] parts = fastCheckDelaysMs.split(",");
+        List<Long> delays = new ArrayList<>();
+        for (String part : parts) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) continue;
+            try {
+                long value = Long.parseLong(trimmed);
+                if (value > 0) {
+                    delays.add(value);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return delays;
+    }
+
+    private void reconcilePaymentFast(Long paymentId) {
+        if (paymentId == null) return;
+        try {
+            Payment payment = paymentRepository.findById(paymentId).orElse(null);
+            if (payment == null || payment.getProcessedAt() != null) return;
+            if (payment.getProviderPaymentId() == null || payment.getProviderPaymentId().isBlank()) return;
+
+            YooKassaPayment verified = fetchVerifiedPayment(payment.getProviderPaymentId(), "fast-check");
+            if (verified == null) return;
+
+            tx.execute(status -> {
+                Payment locked = paymentRepository.lockById(payment.getId());
+                processVerifiedPayment(locked, verified, "fast-check");
+                return null;
+            });
+        } catch (Exception e) {
+            log.debug("Fast-check failed for paymentId={}: {}", paymentId, e.getMessage());
+        }
     }
 
     private YooKassaPayment fetchVerifiedPayment(String paymentId, String source) {

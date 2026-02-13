@@ -223,7 +223,7 @@ public class VpnKeyService {
             return existing.get();
 
         try {
-            return vpnKeyRepository.save(buildPendingKey(userId));
+            return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
         } catch (DataIntegrityViolationException e) {
             // Кто-то параллельно успел создать PENDING/ACTIVE (твой unique index из V4)
             return vpnKeyRepository.findActiveOrPending(userId)
@@ -239,7 +239,7 @@ public class VpnKeyService {
             return existing.get();
 
         try {
-            return vpnKeyRepository.save(buildPendingKey(userId));
+            return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
         } catch (DataIntegrityViolationException e) {
             return vpnKeyRepository.findActiveOrPending(userId)
                     .orElseThrow(() -> e);
