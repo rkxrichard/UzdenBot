@@ -8,6 +8,7 @@ import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Chat;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import ru.uzden.uzdenbot.config.SubscriptionPlansProperties;
 import ru.uzden.uzdenbot.entities.User;
 
 import java.util.List;
@@ -33,6 +34,7 @@ class BotUpdateHandlerTest {
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
+        SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -43,7 +45,8 @@ class BotUpdateHandlerTest {
                 subscriptionService,
                 vpnKeyService,
                 idempotencyService,
-                paymentService
+                paymentService,
+                plans
         );
         setIdempotencyTtl(handler, 10L);
 
@@ -78,6 +81,7 @@ class BotUpdateHandlerTest {
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
+        SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -88,7 +92,8 @@ class BotUpdateHandlerTest {
                 subscriptionService,
                 vpnKeyService,
                 idempotencyService,
-                paymentService
+                paymentService,
+                plans
         );
         setIdempotencyTtl(handler, 10L);
 
@@ -117,6 +122,7 @@ class BotUpdateHandlerTest {
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
+        SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -127,7 +133,8 @@ class BotUpdateHandlerTest {
                 subscriptionService,
                 vpnKeyService,
                 idempotencyService,
-                paymentService
+                paymentService,
+                plans
         );
         setIdempotencyTtl(handler, 10L);
 
@@ -160,6 +167,7 @@ class BotUpdateHandlerTest {
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
+        SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -170,7 +178,8 @@ class BotUpdateHandlerTest {
                 subscriptionService,
                 vpnKeyService,
                 idempotencyService,
-                paymentService
+                paymentService,
+                plans
         );
         setIdempotencyTtl(handler, 10L);
 

@@ -10,6 +10,7 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import ru.uzden.uzdenbot.config.SubscriptionPlansProperties;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.utils.BotMessageFactory;
 import ru.uzden.uzdenbot.utils.BotTextUtils;
@@ -33,6 +34,7 @@ public class BotUpdateHandler {
     private final VpnKeyService vpnKeyService;
     private final IdempotencyService idempotencyService;
     private final PaymentService paymentService;
+    private final SubscriptionPlansProperties subscriptionPlansProperties;
 
     @Value("${app.idempotency.ttl-seconds:10}")
     private long idempotencyTtlSeconds;
@@ -125,8 +127,16 @@ public class BotUpdateHandler {
             }
             case "MENU_BUY" -> out.add(BotMessageFactory.editFromSendMessage(
                     botMenuService.subscriptionPlanMenu(chatId), chatId, messageId));
-            case "BUY_1M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 30, 149, "1 месяц");
-            case "BUY_2M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 60, 249, "2 месяца");
+            case "BUY_1M" -> {
+                SubscriptionPlansProperties.Plan p1 = subscriptionPlansProperties.getPlan1();
+                answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(),
+                        p1.getDays(), p1.getPrice(), planLabel(p1, "1 месяц"));
+            }
+            case "BUY_2M" -> {
+                SubscriptionPlansProperties.Plan p2 = subscriptionPlansProperties.getPlan2();
+                answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(),
+                        p2.getDays(), p2.getPrice(), planLabel(p2, "2 месяца"));
+            }
             case "MENU_GET_KEY" -> answered = handleGetKey(out, chatId, callbackId, user);
             case "MENU_REPLACE_KEY" -> answered = handleReplaceKey(out, chatId, callbackId, user);
             case "ADMIN_ADD_SUB" -> {
@@ -304,6 +314,13 @@ public class BotUpdateHandler {
         }
         out.add(botMenuService.subscriptionMenu(chatId));
         return false;
+    }
+
+    private String planLabel(SubscriptionPlansProperties.Plan plan, String fallback) {
+        if (plan == null || plan.getLabel() == null || plan.getLabel().isBlank()) {
+            return fallback;
+        }
+        return plan.getLabel();
     }
 
     private boolean acquireIdempotency(List<BotApiMethod<?>> out, String callbackId, String key) {

@@ -9,6 +9,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMar
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+import ru.uzden.uzdenbot.config.SubscriptionPlansProperties;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.repositories.UserRepository;
@@ -25,6 +26,7 @@ public class BotMenuService {
 
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
+    private final SubscriptionPlansProperties subscriptionPlansProperties;
 
     @Value("${telegram.main-menu-text:Добро пожаловать в Uzden.\\n\\nЗдесь всё просто: управляйте подпиской и получайте доступ к сервису в пару нажатий.\\n\\nВыберите нужный раздел ниже.}")
     private String mainMenuText;
@@ -215,24 +217,26 @@ public class BotMenuService {
         Optional<Subscription> lastSubOpt = subscriptionService.getLastSubscription(user);
         String baseText = buildSubscriptionMenuText(activeSubOpt, lastSubOpt);
 
-        int baseMonthlyPrice = 149;
-        Plan p1 = new Plan(1, 149);
-        Plan p2 = new Plan(2, 249);
+        SubscriptionPlansProperties.Plan p1 = subscriptionPlansProperties.getPlan1();
+        SubscriptionPlansProperties.Plan p2 = subscriptionPlansProperties.getPlan2();
+        int baseMonthlyPrice = p1.getPrice();
+        String label1 = normalizeLabel(p1.getLabel(), "1 месяц");
+        String label2 = normalizeLabel(p2.getLabel(), "2 месяца");
 
         String text = baseText + "\n\n" +
                 "💳 Тарифы\n" +
                 "━━━━━━━━━━━━\n" +
                 "Выберите срок — подписка активируется или продлевается сразу.\n\n" +
-                "• 1 месяц — 149₽\n" +
-                "• 2 месяца — 249₽ (скидка " + discountPercent(baseMonthlyPrice, p2) + "%)\n\n" +
-                "⭐ Выгоднее брать 2 месяца.";
+                "• " + label1 + " — " + p1.getPrice() + "₽\n" +
+                "• " + label2 + " — " + p2.getPrice() + "₽ (скидка " + discountPercent(baseMonthlyPrice, p2) + "%)\n\n" +
+                "⭐ Выгоднее брать " + label2 + ".";
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text("💳 1 месяц — 149₽")
+                .text("💳 " + label1 + " — " + p1.getPrice() + "₽")
                 .callbackData("BUY_1M")
                 .build();
         InlineKeyboardButton b2 = InlineKeyboardButton.builder()
-                .text("🔥 2 месяца — 249₽ (" + discountPercent(baseMonthlyPrice, p2) + "%)")
+                .text("🔥 " + label2 + " — " + p2.getPrice() + "₽ (" + discountPercent(baseMonthlyPrice, p2) + "%)")
                 .callbackData("BUY_2M")
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
@@ -306,13 +310,18 @@ public class BotMenuService {
         return daysLeft + " " + word;
     }
 
-    private int discountPercent(int baseMonthlyPrice, Plan plan) {
-        if (plan.months <= 1 || baseMonthlyPrice <= 0) return 0;
-        double baseTotal = baseMonthlyPrice * (double) plan.months;
+    private int discountPercent(int baseMonthlyPrice, SubscriptionPlansProperties.Plan plan) {
+        if (plan.getMonths() <= 1 || baseMonthlyPrice <= 0) return 0;
+        double baseTotal = baseMonthlyPrice * (double) plan.getMonths();
         if (baseTotal <= 0) return 0;
-        double discount = 100.0 - (plan.price / baseTotal) * 100.0;
+        double discount = 100.0 - (plan.getPrice() / baseTotal) * 100.0;
         int rounded = (int) Math.round(discount / 5.0) * 5;
         return Math.max(0, rounded);
+    }
+
+    private String normalizeLabel(String label, String fallback) {
+        if (label == null || label.isBlank()) return fallback;
+        return label;
     }
 
     private ReplyKeyboardMarkup buildCommandKeyboard(boolean isAdmin) {
@@ -334,13 +343,5 @@ public class BotMenuService {
                 .build();
     }
 
-    private static final class Plan {
-        final int months;
-        final int price;
-
-        private Plan(int months, int price) {
-            this.months = months;
-            this.price = price;
-        }
-    }
+ 
 }
