@@ -125,10 +125,8 @@ public class BotUpdateHandler {
             }
             case "MENU_BUY" -> out.add(BotMessageFactory.editFromSendMessage(
                     botMenuService.subscriptionPlanMenu(chatId), chatId, messageId));
-            case "BUY_1M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 30, 199, "1 месяц");
-            case "BUY_3M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 90, 399, "3 месяца");
-            case "BUY_6M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 180, 699, "6 месяцев");
-            case "BUY_12M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 365, 1199, "12 месяцев");
+            case "BUY_1M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 30, 149, "1 месяц");
+            case "BUY_2M" -> answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(), 60, 249, "2 месяца");
             case "MENU_GET_KEY" -> answered = handleGetKey(out, chatId, callbackId, user);
             case "MENU_REPLACE_KEY" -> answered = handleReplaceKey(out, chatId, callbackId, user);
             case "ADMIN_ADD_SUB" -> {

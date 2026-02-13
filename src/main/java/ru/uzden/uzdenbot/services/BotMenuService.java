@@ -215,37 +215,25 @@ public class BotMenuService {
         Optional<Subscription> lastSubOpt = subscriptionService.getLastSubscription(user);
         String baseText = buildSubscriptionMenuText(activeSubOpt, lastSubOpt);
 
-        int baseMonthlyPrice = 199;
-        Plan p1 = new Plan(1, 199);
-        Plan p3 = new Plan(3, 399);
-        Plan p6 = new Plan(6, 699);
-        Plan p12 = new Plan(12, 1199);
+        int baseMonthlyPrice = 149;
+        Plan p1 = new Plan(1, 149);
+        Plan p2 = new Plan(2, 249);
 
         String text = baseText + "\n\n" +
                 "💳 Тарифы\n" +
                 "━━━━━━━━━━━━\n" +
                 "Выберите срок — подписка активируется или продлевается сразу.\n\n" +
-                "• 1 месяц — 199₽\n" +
-                "• 3 месяца — 399₽ (скидка " + discountPercent(baseMonthlyPrice, p3) + "%)\n" +
-                "• 6 месяцев — 699₽ (скидка " + discountPercent(baseMonthlyPrice, p6) + "%)\n" +
-                "• 12 месяцев — 1199₽ (скидка " + discountPercent(baseMonthlyPrice, p12) + "%)\n\n" +
-                "⭐ Самый выгодный вариант — 12 месяцев.";
+                "• 1 месяц — 149₽\n" +
+                "• 2 месяца — 249₽ (скидка " + discountPercent(baseMonthlyPrice, p2) + "%)\n\n" +
+                "⭐ Выгоднее брать 2 месяца.";
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text("💳 1 месяц — 199₽")
+                .text("💳 1 месяц — 149₽")
                 .callbackData("BUY_1M")
                 .build();
-        InlineKeyboardButton b3 = InlineKeyboardButton.builder()
-                .text("🔥 3 месяца — 399₽ (" + discountPercent(baseMonthlyPrice, p3) + "%)")
-                .callbackData("BUY_3M")
-                .build();
-        InlineKeyboardButton b6 = InlineKeyboardButton.builder()
-                .text("⭐ 6 месяцев — 699₽ (" + discountPercent(baseMonthlyPrice, p6) + "%)")
-                .callbackData("BUY_6M")
-                .build();
-        InlineKeyboardButton b12 = InlineKeyboardButton.builder()
-                .text("👑 12 месяцев — 1199₽ (" + discountPercent(baseMonthlyPrice, p12) + "%)")
-                .callbackData("BUY_12M")
+        InlineKeyboardButton b2 = InlineKeyboardButton.builder()
+                .text("🔥 2 месяца — 249₽ (" + discountPercent(baseMonthlyPrice, p2) + "%)")
+                .callbackData("BUY_2M")
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
                 .text("⬅️ Назад")
@@ -255,9 +243,7 @@ public class BotMenuService {
         InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
                 .keyboard(List.of(
                         List.of(b1),
-                        List.of(b3),
-                        List.of(b6),
-                        List.of(b12),
+                        List.of(b2),
                         List.of(bBack)
                 ))
                 .build();
