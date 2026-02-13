@@ -312,7 +312,6 @@ public class BotUpdateHandler {
             String msg = "❌ Не удалось создать платеж. Попробуйте еще раз позже.";
             out.add(BotMessageFactory.simpleMessage(chatId, msg));
         }
-        out.add(botMenuService.subscriptionMenu(chatId));
         return false;
     }
 

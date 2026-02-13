@@ -2,6 +2,7 @@ package ru.uzden.uzdenbot.services;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.uzden.uzdenbot.entities.Payment;
@@ -18,6 +19,7 @@ import ru.uzden.uzdenbot.yookassa.YooKassaWebhook;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -34,6 +36,7 @@ public class PaymentService {
     private final SubscriptionService subscriptionService;
     private final YooKassaClient yooKassaClient;
     private final YooKassaProperties properties;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public PaymentInitResult createPayment(User user, int days, int price, String label) {
@@ -108,9 +111,39 @@ public class PaymentService {
                 return;
             }
 
-            subscriptionService.extendSubscription(payment.getUser(), days);
+            var sub = subscriptionService.extendSubscription(payment.getUser(), days);
             payment.setPaidAt(Instant.now());
             payment.setProcessedAt(Instant.now());
+            paymentRepository.save(payment);
+            eventPublisher.publishEvent(new PaymentStatusEvent(
+                    payment.getId(),
+                    payment.getUser().getId(),
+                    payment.getUser().getTelegramId(),
+                    "succeeded",
+                    payment.getPlanLabel(),
+                    payment.getAmount(),
+                    sub.getEndDate()
+            ));
+            return;
+        }
+
+        if ("canceled".equalsIgnoreCase(verified.getStatus())) {
+            if (payment.getProcessedAt() != null) {
+                paymentRepository.save(payment);
+                return;
+            }
+            payment.setProcessedAt(Instant.now());
+            paymentRepository.save(payment);
+            eventPublisher.publishEvent(new PaymentStatusEvent(
+                    payment.getId(),
+                    payment.getUser().getId(),
+                    payment.getUser().getTelegramId(),
+                    "canceled",
+                    payment.getPlanLabel(),
+                    payment.getAmount(),
+                    null
+            ));
+            return;
         }
 
         paymentRepository.save(payment);
@@ -195,5 +228,16 @@ public class PaymentService {
     }
 
     public record PaymentInitResult(Payment payment, String confirmationUrl) {
+    }
+
+    public record PaymentStatusEvent(
+            Long paymentId,
+            Long userId,
+            Long telegramId,
+            String status,
+            String planLabel,
+            BigDecimal amount,
+            LocalDateTime subscriptionEndDate
+    ) {
     }
 }
