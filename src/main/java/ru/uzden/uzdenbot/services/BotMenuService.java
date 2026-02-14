@@ -35,6 +35,9 @@ public class BotMenuService {
     @Value("${telegram.instructions-text:Инструкция}")
     private String instructionsText;
 
+    @Value("${telegram.support-username:@support}")
+    private String supportUsername;
+
     private static final DateTimeFormatter DT_FMT   = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     public SendMessage mainMenu(Long chatId, boolean isAdmin) {
@@ -50,10 +53,14 @@ public class BotMenuService {
                 .text("📘 Инструкция")
                 .callbackData("MENU_HELP")
                 .build();
+        InlineKeyboardButton bSupport = InlineKeyboardButton.builder()
+                .text("💬 Техподдержка")
+                .url(buildSupportUrl())
+                .build();
 
         List<List<InlineKeyboardButton>> rows = isAdmin
-                ? List.of(List.of(b1), List.of(bHelp), List.of(bAdmin))
-                : List.of(List.of(b1), List.of(bHelp));
+                ? List.of(List.of(b1), List.of(bHelp), List.of(bSupport), List.of(bAdmin))
+                : List.of(List.of(b1), List.of(bHelp), List.of(bSupport));
 
         InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
                 .keyboard(rows)
@@ -326,6 +333,17 @@ public class BotMenuService {
     private String normalizeLabel(String label, String fallback) {
         if (label == null || label.isBlank()) return fallback;
         return label;
+    }
+
+    private String buildSupportUrl() {
+        String u = supportUsername == null ? "" : supportUsername.trim();
+        if (u.isEmpty()) {
+            return "https://t.me";
+        }
+        if (u.startsWith("@")) {
+            u = u.substring(1);
+        }
+        return "https://t.me/" + u;
     }
 
     private void reconcileUserPaymentsSafe(User user) {

@@ -55,6 +55,7 @@ telegram:
     token: ${TELEGRAM_BOT_TOKEN}
     username: ${TELEGRAM_BOT_USERNAME}
   admin-ids: "980389038,592239190"
+  support-username: ${TELEGRAM_SUPPORT_USERNAME:@your_support}
   main-menu-text: |-
     Добро пожаловать в REDCastle! 🏰✨
 
