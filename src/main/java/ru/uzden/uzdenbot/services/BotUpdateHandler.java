@@ -205,21 +205,22 @@ public class BotUpdateHandler {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.ADD_SUBSCRIPTION);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте @username и количество дней через пробел, например:\n\n@user 30\n\n/cancel — отмена."));
+                            "Отправьте @username и количество дней через пробел, например:\n\n@user 30\n\n" +
+                                    "Подписка будет привязана к первому ключу (или ключ будет создан).\n\n/cancel — отмена."));
                 }
             }
             case "ADMIN_CHECK_SUB" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.CHECK_SUBSCRIPTION);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте @username для проверки подписки.\n\n/cancel — отмена."));
+                            "Отправьте @username для проверки подписок по ключам.\n\n/cancel — отмена."));
                 }
             }
             case "ADMIN_REVOKE_SUB" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.REVOKE_SUBSCRIPTION);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте @username, чтобы отключить подписку.\n\n/cancel — отмена."));
+                            "Отправьте @username, чтобы отключить все активные подписки.\n\n/cancel — отмена."));
                 }
             }
             case "ADMIN_DISABLE_USER" -> {
@@ -294,6 +295,7 @@ public class BotUpdateHandler {
         }
 
         try {
+            vpnKeyService.ensureKeyForActiveSubscription(user);
             var key = vpnKeyService.getKeyForUser(user, keyId);
             String msg = "🔑 Ваш VPN-ключ:\n\n" +
                     "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
@@ -344,6 +346,7 @@ public class BotUpdateHandler {
         }
 
         try {
+            vpnKeyService.ensureKeyForActiveSubscription(user);
             if (!vpnKeyService.canDeleteKey(user, keyId)) {
                 VpnKey key = vpnKeyService.findKeyForUser(user, keyId);
                 var activeSub = vpnKeyService.getActiveSubscriptionForKey(key);

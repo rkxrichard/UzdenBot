@@ -45,6 +45,7 @@ public class BotMenuService {
     private static final DateTimeFormatter DT_FMT   = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     public SendMessage mainMenu(Long chatId, boolean isAdmin, User user) {
+        vpnKeyService.ensureKeyForActiveSubscription(user);
         boolean hasAnySubscription = user != null && subscriptionService.getLastSubscription(user).isPresent();
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
@@ -169,6 +170,7 @@ public class BotMenuService {
                 .orElseThrow(() -> new IllegalStateException("User not found for chatId: " + chatId));
 
         reconcileUserPaymentsSafe(user);
+        vpnKeyService.ensureKeyForActiveSubscription(user);
 
         Optional<Subscription> activeSubOpt = subscriptionService.getActiveSubscription(user);
         Optional<Subscription> lastSubOpt = subscriptionService.getLastSubscription(user);
@@ -350,6 +352,7 @@ public class BotMenuService {
     }
 
     public SendMessage myKeysMenu(Long chatId, User user) {
+        vpnKeyService.ensureKeyForActiveSubscription(user);
         List<VpnKey> keys = vpnKeyService.listUserKeys(user);
         int maxKeys = vpnKeyService.getMaxKeysPerUser();
 
@@ -410,6 +413,7 @@ public class BotMenuService {
     }
 
     public SendMessage keyActionsMenu(Long chatId, User user, long keyId) {
+        vpnKeyService.ensureKeyForActiveSubscription(user);
         List<VpnKey> keys = vpnKeyService.listUserKeys(user);
         int index = -1;
         VpnKey target = null;

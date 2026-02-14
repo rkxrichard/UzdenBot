@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.List;
 
 @Service
 public class SubscriptionService {
@@ -128,6 +129,23 @@ public class SubscriptionService {
         sub.setEndDate(LocalDateTime.now());
         sub.setActive(false);
         return Optional.of(subscriptionRepository.save(sub));
+    }
+
+    @Transactional
+    public int revokeAllActiveSubscriptions(User user) {
+        if (user == null || user.getId() == null) {
+            return 0;
+        }
+        userRepository.lockUser(user.getId());
+        List<Subscription> active = subscriptionRepository.findActiveByUser(user, LocalDateTime.now());
+        if (active.isEmpty()) return 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (Subscription sub : active) {
+            sub.setEndDate(now);
+            sub.setActive(false);
+            subscriptionRepository.save(sub);
+        }
+        return active.size();
     }
 
     public long getDaysLeft(Subscription sub) {

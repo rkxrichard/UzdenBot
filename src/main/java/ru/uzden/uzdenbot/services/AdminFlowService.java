@@ -59,13 +59,18 @@ public class AdminFlowService {
         User user = userOpt.get();
         Subscription sub;
         var keys = vpnKeyService.listUserKeys(user);
+        String keyLabel;
         if (!keys.isEmpty()) {
             sub = subscriptionService.extendSubscriptionForKey(user, keys.get(0), days);
+            keyLabel = "№1";
         } else {
-            sub = subscriptionService.extendSubscription(user, days);
+            var key = vpnKeyService.createPendingKey(user);
+            sub = subscriptionService.extendSubscriptionForKey(user, key, days);
+            keyLabel = "№1 (создан)";
         }
         adminStateService.clear(chatId);
-        out.add(BotMessageFactory.simpleMessage(chatId, "✅ Подписка выдана до: " + BotTextUtils.formatDate(sub.getEndDate())));
+        out.add(BotMessageFactory.simpleMessage(chatId, "✅ Подписка выдана до: " + BotTextUtils.formatDate(sub.getEndDate()) +
+                "\nКлюч: " + keyLabel));
     }
 
     private void handleCheckSubscription(Long chatId, String text, List<SendMessage> out) {
@@ -80,13 +85,33 @@ public class AdminFlowService {
             return;
         }
         User user = userOpt.get();
-        Optional<Subscription> subOpt = subscriptionService.getActiveSubscription(user);
-        if (subOpt.isEmpty()) {
-            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Активной подписки нет."));
+        vpnKeyService.ensureKeyForActiveSubscription(user);
+        var keys = vpnKeyService.listUserKeys(user);
+        if (keys.isEmpty()) {
+            Optional<Subscription> subOpt = subscriptionService.getActiveSubscription(user);
+            if (subOpt.isEmpty()) {
+                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Активных подписок нет."));
+            } else {
+                long daysLeft = subscriptionService.getDaysLeft(subOpt.get());
+                out.add(BotMessageFactory.simpleMessage(chatId,
+                        "✅ Активна. Осталось: " + daysLeft + " дн. До: " + BotTextUtils.formatDate(subOpt.get().getEndDate())));
+            }
         } else {
-            long daysLeft = subscriptionService.getDaysLeft(subOpt.get());
-            out.add(BotMessageFactory.simpleMessage(chatId,
-                    "✅ Активна. Осталось: " + daysLeft + " дн. До: " + BotTextUtils.formatDate(subOpt.get().getEndDate())));
+            StringBuilder sb = new StringBuilder("📦 Подписки по ключам:\n");
+            for (int i = 0; i < keys.size(); i++) {
+                var key = keys.get(i);
+                var active = subscriptionService.getActiveSubscription(key);
+                if (active.isPresent()) {
+                    long daysLeft = subscriptionService.getDaysLeft(active.get());
+                    sb.append("Ключ ").append(i + 1)
+                            .append(": ").append(daysLeft).append(" дн. до ")
+                            .append(BotTextUtils.formatDate(active.get().getEndDate()))
+                            .append("\n");
+                } else {
+                    sb.append("Ключ ").append(i + 1).append(": подписка не активна\n");
+                }
+            }
+            out.add(BotMessageFactory.simpleMessage(chatId, sb.toString().trim()));
         }
         adminStateService.clear(chatId);
     }
@@ -102,12 +127,12 @@ public class AdminFlowService {
             out.add(BotMessageFactory.simpleMessage(chatId, "Пользователь не найден. Он должен сначала написать /start."));
             return;
         }
-        Optional<Subscription> revoked = subscriptionService.revokeActiveSubscription(userOpt.get());
+        int revoked = subscriptionService.revokeAllActiveSubscriptions(userOpt.get());
         adminStateService.clear(chatId);
-        if (revoked.isPresent()) {
-            out.add(BotMessageFactory.simpleMessage(chatId, "🛑 Подписка отключена."));
+        if (revoked > 0) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "🛑 Отключено подписок: " + revoked));
         } else {
-            out.add(BotMessageFactory.simpleMessage(chatId, "Активной подписки не было."));
+            out.add(BotMessageFactory.simpleMessage(chatId, "Активных подписок не было."));
         }
     }
 

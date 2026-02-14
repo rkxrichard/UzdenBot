@@ -11,6 +11,7 @@ import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 import ru.uzden.uzdenbot.repositories.VpnKeyRepository;
+import ru.uzden.uzdenbot.repositories.SubscriptionRepository;
 import ru.uzden.uzdenbot.xui.ThreeXuiClient;
 import ru.uzden.uzdenbot.xui.VlessLinkBuilder;
 
@@ -27,6 +28,7 @@ public class VpnKeyService {
     private final VpnKeyRepository vpnKeyRepository;
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
+    private final SubscriptionRepository subscriptionRepository;
     private final ThreeXuiClient xuiClient;
     private final VlessLinkBuilder linkBuilder;
     private final TransactionTemplate tx;
@@ -43,6 +45,7 @@ public class VpnKeyService {
             VpnKeyRepository vpnKeyRepository,
             UserRepository userRepository,
             SubscriptionService subscriptionService,
+            SubscriptionRepository subscriptionRepository,
             ThreeXuiClient xuiClient,
             VlessLinkBuilder linkBuilder,
             TransactionTemplate tx,
@@ -53,6 +56,7 @@ public class VpnKeyService {
         this.vpnKeyRepository = vpnKeyRepository;
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
+        this.subscriptionRepository = subscriptionRepository;
         this.xuiClient = xuiClient;
         this.linkBuilder = linkBuilder;
         this.tx = tx;
@@ -101,6 +105,11 @@ public class VpnKeyService {
     public boolean canDeleteKey(User user, long keyId) {
         VpnKey key = findKeyForUser(user, keyId);
         return !subscriptionService.hasActiveSubscriptionForKey(key);
+    }
+
+    public void ensureKeyForActiveSubscription(User user) {
+        if (user == null || user.getId() == null) return;
+        tx.execute(status -> ensureKeyForActiveSubscriptionTx(user.getId()));
     }
 
     public VpnKey getKeyForUser(User user, long keyId) {
@@ -272,6 +281,29 @@ public class VpnKeyService {
         userRepository.lockUser(userId);
         ensureKeyLimit(userId);
         return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
+    }
+
+    private Void ensureKeyForActiveSubscriptionTx(Long userId) {
+        userRepository.lockUser(userId);
+        List<ru.uzden.uzdenbot.entities.Subscription> unassigned = subscriptionRepository.findActiveUnassigned(
+                userRepository.getReferenceById(userId),
+                java.time.LocalDateTime.now()
+        );
+        if (unassigned.isEmpty()) {
+            return null;
+        }
+
+        VpnKey key = vpnKeyRepository.findFirstNonRevoked(userId).orElse(null);
+        if (key == null) {
+            ensureKeyLimit(userId);
+            key = vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
+        }
+
+        for (ru.uzden.uzdenbot.entities.Subscription sub : unassigned) {
+            sub.setVpnKey(key);
+            subscriptionRepository.save(sub);
+        }
+        return null;
     }
 
     private VpnKey createOrGetActiveOrPendingTx(Long userId) {

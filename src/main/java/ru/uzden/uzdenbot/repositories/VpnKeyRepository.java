@@ -41,6 +41,15 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
              and k.status <> ru.uzden.uzdenbot.entities.VpnKey$Status.REVOKED
            order by k.createdAt asc
            """)
+    Optional<VpnKey> findFirstNonRevoked(@Param("userId") long userId);
+
+    @Query("""
+           select k from VpnKey k
+           where k.user.id = :userId
+             and k.revoked = false
+             and k.status <> ru.uzden.uzdenbot.entities.VpnKey$Status.REVOKED
+           order by k.createdAt asc
+           """)
     List<VpnKey> findUserKeys(@Param("userId") long userId);
 
     @Query("""
