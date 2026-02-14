@@ -35,6 +35,8 @@ public class VpnKeyService {
     private final int publicPort;
     private final String linkTag;
 
+    private static final int MAX_KEYS_PER_USER = 3;
+
     @Autowired
     public VpnKeyService(
             VpnKeyRepository vpnKeyRepository,
@@ -59,10 +61,67 @@ public class VpnKeyService {
         this.linkTag = linkTag;
     }
 
+    public int getMaxKeysPerUser() {
+        return MAX_KEYS_PER_USER;
+    }
+
+    public long countActiveKeys(User user) {
+        if (user == null || user.getId() == null) return 0;
+        return vpnKeyRepository.countActiveKeys(user.getId());
+    }
+
+    public int getActiveKeyMultiplier(User user) {
+        long active = countActiveKeys(user);
+        if (active <= 1) return 1;
+        return (int) Math.min(MAX_KEYS_PER_USER, active);
+    }
+
+    public List<VpnKey> listUserKeys(User user) {
+        if (user == null || user.getId() == null) return List.of();
+        return vpnKeyRepository.findUserKeys(user.getId());
+    }
+
+    public VpnKey getKeyForUser(User user, long keyId) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is required");
+        }
+        VpnKey key = vpnKeyRepository.findByIdAndUserId(keyId, user.getId())
+                .orElseThrow(() -> new IllegalStateException("Ключ не найден"));
+
+        if (key.isRevoked() || key.getStatus() == VpnKey.Status.REVOKED) {
+            throw new IllegalStateException("Ключ отозван");
+        }
+
+        if (key.getStatus() == VpnKey.Status.ACTIVE) {
+            if (needsLinkRefresh(key)) {
+                return refreshActiveLink(key);
+            }
+            return key;
+        }
+
+        return finalizeIssueOutsideTx(key.getId());
+    }
+
+    public void revokeKeyForUser(User user, long keyId) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is required");
+        }
+        VpnKey key = tx.execute(status -> revokeByIdForUserTx(user.getId(), keyId));
+        if (key == null) {
+            throw new IllegalStateException("Ключ не найден");
+        }
+
+        try {
+            xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+        } catch (Exception e) {
+            log.error("Не удалось выключить ключ клиента: inbound:{}, uuid:{}", key.getInboundId(), key.getClientUuid());
+            tx.execute(s -> markErrorTx(key.getId(), "disable failed: " + safeMsg(e)));
+        }
+    }
 
     /**
      * Выдать ключ пользователю.
-     * Идемпотентно: если уже есть ACTIVE/PENDING - вернёт его.
+     * Создаёт новый ключ (максимум 3 на пользователя).
      * Устойчиво: PENDING -> (3x-ui) -> ACTIVE, при ошибке FAILED.
      */
     public VpnKey issueKey(User user) {
@@ -70,21 +129,7 @@ public class VpnKeyService {
             throw new IllegalStateException("Нет активной подписки");
         }
 
-
-        // 1) в БД создаем/получаем PENDING или ACTIVE в транзакции
-        VpnKey key = tx.execute(status -> createOrGetActiveOrPendingTx(user.getId()));
-
-
-        // 2) если уже есть ACTIVE то просто возвращаю
-        if (key.getStatus() == VpnKey.Status.ACTIVE && !key.isRevoked()) {
-            if (needsLinkRefresh(key)) {
-                return refreshActiveLink(key);
-            }
-            return key;
-        }
-
-
-        // 3) если статус PENDING или FAILED стараемся довести до ACTIVE
+        VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId()));
         return finalizeIssueOutsideTx(key.getId());
     }
 
@@ -215,6 +260,12 @@ public class VpnKeyService {
      * ==========================================================
      */
 
+    private VpnKey createNewPendingKeyTx(Long userId) {
+        userRepository.lockUser(userId);
+        ensureKeyLimit(userId);
+        return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
+    }
+
     private VpnKey createOrGetActiveOrPendingTx(Long userId) {
         userRepository.lockUser(userId);
 
@@ -223,9 +274,10 @@ public class VpnKeyService {
             return existing.get();
 
         try {
+            ensureKeyLimit(userId);
             return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
         } catch (DataIntegrityViolationException e) {
-            // Кто-то параллельно успел создать PENDING/ACTIVE (твой unique index из V4)
+            // Кто-то параллельно успел создать PENDING/ACTIVE
             return vpnKeyRepository.findActiveOrPending(userId)
                     .orElseThrow(() -> e);
         }
@@ -239,6 +291,7 @@ public class VpnKeyService {
             return existing.get();
 
         try {
+            ensureKeyLimit(userId);
             return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
         } catch (DataIntegrityViolationException e) {
             return vpnKeyRepository.findActiveOrPending(userId)
@@ -255,6 +308,8 @@ public class VpnKeyService {
             old.setLastError(null);
             vpnKeyRepository.save(old);
             vpnKeyRepository.flush();
+        } else {
+            ensureKeyLimit(userId);
         }
 
         VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId));
@@ -287,6 +342,13 @@ public class VpnKeyService {
 
         pending.setKeyValue("PENDING:" + clientUuid);
         return pending;
+    }
+
+    private void ensureKeyLimit(Long userId) {
+        long existing = vpnKeyRepository.countNonRevokedKeys(userId);
+        if (existing >= MAX_KEYS_PER_USER) {
+            throw new IllegalStateException("Достигнут лимит ключей (" + MAX_KEYS_PER_USER + ")");
+        }
     }
 
     private static final class ReplaceContext {
@@ -343,6 +405,19 @@ public class VpnKeyService {
         if (key == null) return null;
 
         userRepository.lockUser(key.getUser().getId());
+
+        if (key.getStatus() == VpnKey.Status.REVOKED || key.isRevoked()) return key;
+
+        key.markRevoked();
+        key.setLastError(null);
+        return vpnKeyRepository.save(key);
+    }
+
+    private VpnKey revokeByIdForUserTx(long userId, long vpnKeyId) {
+        VpnKey key = vpnKeyRepository.findByIdAndUserId(vpnKeyId, userId).orElse(null);
+        if (key == null) return null;
+
+        userRepository.lockUser(userId);
 
         if (key.getStatus() == VpnKey.Status.REVOKED || key.isRevoked()) return key;
 

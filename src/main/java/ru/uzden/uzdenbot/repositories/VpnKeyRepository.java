@@ -32,6 +32,35 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
            """)
     Optional<VpnKey> findActiveKey(@Param("userId") long userId);
 
+    Optional<VpnKey> findByIdAndUserId(Long id, Long userId);
+
+    @Query("""
+           select k from VpnKey k
+           where k.user.id = :userId
+             and k.revoked = false
+             and k.status <> ru.uzden.uzdenbot.entities.VpnKey$Status.REVOKED
+           order by k.createdAt asc
+           """)
+    List<VpnKey> findUserKeys(@Param("userId") long userId);
+
+    @Query("""
+           select count(k) from VpnKey k
+           where k.user.id = :userId
+             and k.revoked = false
+             and k.status = ru.uzden.uzdenbot.entities.VpnKey$Status.ACTIVE
+           """)
+    long countActiveKeys(@Param("userId") long userId);
+
+    @Query("""
+           select count(k) from VpnKey k
+           where k.user.id = :userId
+             and k.revoked = false
+             and k.status in (ru.uzden.uzdenbot.entities.VpnKey$Status.PENDING,
+                              ru.uzden.uzdenbot.entities.VpnKey$Status.ACTIVE,
+                              ru.uzden.uzdenbot.entities.VpnKey$Status.FAILED)
+           """)
+    long countNonRevokedKeys(@Param("userId") long userId);
+
     @Query("""
            select k from VpnKey k
            where k.revoked = false

@@ -12,9 +12,12 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 import ru.uzden.uzdenbot.config.SubscriptionPlansProperties;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +31,7 @@ public class BotMenuService {
     private final SubscriptionService subscriptionService;
     private final SubscriptionPlansProperties subscriptionPlansProperties;
     private final PaymentService paymentService;
+    private final VpnKeyService vpnKeyService;
 
     @Value("${telegram.main-menu-text:Добро пожаловать в Uzden.\\n\\nЗдесь всё просто: управляйте подпиской и получайте доступ к сервису в пару нажатий.\\n\\nВыберите нужный раздел ниже.}")
     private String mainMenuText;
@@ -40,10 +44,16 @@ public class BotMenuService {
 
     private static final DateTimeFormatter DT_FMT   = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
-    public SendMessage mainMenu(Long chatId, boolean isAdmin) {
+    public SendMessage mainMenu(Long chatId, boolean isAdmin, User user) {
+        boolean hasAnySubscription = user != null && subscriptionService.getLastSubscription(user).isPresent();
+
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
                 .text("📦 Подписка и тарифы")
                 .callbackData("MENU_SUBSCRIPTION")
+                .build();
+        InlineKeyboardButton bKeys = InlineKeyboardButton.builder()
+                .text("🔑 Мои ключи")
+                .callbackData("MENU_KEYS")
                 .build();
         InlineKeyboardButton bAdmin = InlineKeyboardButton.builder()
                 .text("🛠 Админ‑панель")
@@ -58,9 +68,16 @@ public class BotMenuService {
                 .url(buildSupportUrl())
                 .build();
 
-        List<List<InlineKeyboardButton>> rows = isAdmin
-                ? List.of(List.of(b1), List.of(bHelp), List.of(bSupport), List.of(bAdmin))
-                : List.of(List.of(b1), List.of(bHelp), List.of(bSupport));
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(b1));
+        if (hasAnySubscription) {
+            rows.add(List.of(bKeys));
+        }
+        rows.add(List.of(bHelp));
+        rows.add(List.of(bSupport));
+        if (isAdmin) {
+            rows.add(List.of(bAdmin));
+        }
 
         InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
                 .keyboard(rows)
@@ -170,14 +187,9 @@ public class BotMenuService {
                 .callbackData("MENU_BUY")
                 .build();
 
-        InlineKeyboardButton bGetKey = InlineKeyboardButton.builder()
-                .text("🔑 Получить ключ")
-                .callbackData("MENU_GET_KEY")
-                .build();
-
-        InlineKeyboardButton bReplaceKey = InlineKeyboardButton.builder()
-                .text("♻️ Заменить ключ")
-                .callbackData("MENU_REPLACE_KEY")
+        InlineKeyboardButton bMyKeys = InlineKeyboardButton.builder()
+                .text("🔑 Мои ключи")
+                .callbackData("MENU_KEYS")
                 .build();
 
 //        InlineKeyboardButton b2 = InlineKeyboardButton.builder()
@@ -197,8 +209,7 @@ public class BotMenuService {
             // Активна: дать кнопку ключа + продление
             keyboardMarkup = InlineKeyboardMarkup.builder()
                     .keyboard(List.of(
-                            List.of(bGetKey),
-                            List.of(bReplaceKey),
+                            List.of(bMyKeys),
                             List.of(bBuy),
                             List.of(bBack)
                     ))
@@ -230,24 +241,33 @@ public class BotMenuService {
 
         SubscriptionPlansProperties.Plan p1 = subscriptionPlansProperties.getPlan1();
         SubscriptionPlansProperties.Plan p2 = subscriptionPlansProperties.getPlan2();
-        int baseMonthlyPrice = p1.getPrice();
+        int activeKeys = (int) vpnKeyService.countActiveKeys(user);
+        int multiplier = vpnKeyService.getActiveKeyMultiplier(user);
+        int price1 = p1.getPrice() * multiplier;
+        int price2 = p2.getPrice() * multiplier;
+        int baseMonthlyPrice = p1.getPrice() * multiplier;
         String label1 = normalizeLabel(p1.getLabel(), "1 месяц");
         String label2 = normalizeLabel(p2.getLabel(), "2 месяца");
+        String multiplierSuffix = multiplier > 1 ? " (x" + multiplier + ")" : "";
+        String multiplierNote = multiplier > 1
+                ? "\n\n🔑 Активных ключей: " + activeKeys + " → цена x" + multiplier + " (макс " + vpnKeyService.getMaxKeysPerUser() + ")"
+                : "";
 
         String text = baseText + "\n\n" +
                 "💳 Тарифы\n" +
                 "━━━━━━━━━━━━\n" +
                 "Выберите срок — подписка активируется или продлевается сразу.\n\n" +
-                "• " + label1 + " — " + p1.getPrice() + "₽\n" +
-                "• " + label2 + " — " + p2.getPrice() + "₽ (скидка " + discountPercent(baseMonthlyPrice, p2) + "%)\n\n" +
-                "⭐ Выгоднее брать " + label2 + ".";
+                "• " + label1 + " — " + price1 + "₽" + multiplierSuffix + "\n" +
+                "• " + label2 + " — " + price2 + "₽ (скидка " + discountPercent(baseMonthlyPrice, price2, p2.getMonths()) + "%)" + multiplierSuffix + "\n\n" +
+                "⭐ Выгоднее брать " + label2 + "." +
+                multiplierNote;
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text("💳 " + label1 + " — " + p1.getPrice() + "₽")
+                .text("💳 " + label1 + " — " + price1 + "₽" + multiplierSuffix)
                 .callbackData("BUY_1M")
                 .build();
         InlineKeyboardButton b2 = InlineKeyboardButton.builder()
-                .text("🔥 " + label2 + " — " + p2.getPrice() + "₽ (" + discountPercent(baseMonthlyPrice, p2) + "%)")
+                .text("🔥 " + label2 + " — " + price2 + "₽ (" + discountPercent(baseMonthlyPrice, price2, p2.getMonths()) + "%)" + multiplierSuffix)
                 .callbackData("BUY_2M")
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
@@ -259,6 +279,127 @@ public class BotMenuService {
                 .keyboard(List.of(
                         List.of(b1),
                         List.of(b2),
+                        List.of(bBack)
+                ))
+                .build();
+
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(text)
+                .replyMarkup(keyboardMarkup)
+                .build();
+    }
+
+    public SendMessage myKeysMenu(Long chatId, User user) {
+        List<VpnKey> keys = vpnKeyService.listUserKeys(user);
+        int maxKeys = vpnKeyService.getMaxKeysPerUser();
+        boolean hasActiveSub = subscriptionService.hasActiveSubscription(user);
+
+        StringBuilder text = new StringBuilder("🔑 Мои ключи\n\n");
+        if (keys.isEmpty()) {
+            text.append("У вас пока нет ключей.");
+        } else {
+            text.append("Ваши ключи (по порядку создания):\n");
+            for (int i = 0; i < keys.size(); i++) {
+                VpnKey key = keys.get(i);
+                text.append(i + 1)
+                        .append(") Ключ ")
+                        .append(i + 1)
+                        .append(" — ")
+                        .append(keyStatusLabel(key))
+                        .append("\n");
+            }
+        }
+        if (!hasActiveSub) {
+            text.append("\n⚠️ Нет активной подписки. Получение ключей недоступно.");
+        } else if (keys.size() < maxKeys) {
+            text.append("\nМожно создать новый ключ (макс ").append(maxKeys).append(").");
+        }
+
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        for (int i = 0; i < keys.size(); i++) {
+            VpnKey key = keys.get(i);
+            InlineKeyboardButton b = InlineKeyboardButton.builder()
+                    .text("🔑 Ключ " + (i + 1))
+                    .callbackData("KEY_SELECT:" + key.getId())
+                    .build();
+            rows.add(List.of(b));
+        }
+
+        if (hasActiveSub && keys.size() < maxKeys) {
+            InlineKeyboardButton bNew = InlineKeyboardButton.builder()
+                    .text("➕ Новый ключ")
+                    .callbackData("KEY_NEW")
+                    .build();
+            rows.add(List.of(bNew));
+        }
+
+        InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                .text("⬅️ Назад")
+                .callbackData("MENU_BACK")
+                .build();
+        rows.add(List.of(bBack));
+
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboard(rows)
+                .build();
+
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(text.toString())
+                .replyMarkup(keyboardMarkup)
+                .build();
+    }
+
+    public SendMessage keyActionsMenu(Long chatId, User user, long keyId) {
+        List<VpnKey> keys = vpnKeyService.listUserKeys(user);
+        int index = -1;
+        VpnKey target = null;
+        for (int i = 0; i < keys.size(); i++) {
+            VpnKey key = keys.get(i);
+            if (key.getId() != null && key.getId() == keyId) {
+                index = i;
+                target = key;
+                break;
+            }
+        }
+        if (target == null) {
+            InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                    .text("⬅️ Назад")
+                    .callbackData("MENU_KEYS")
+                    .build();
+            InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                    .keyboard(List.of(List.of(bBack)))
+                    .build();
+            return SendMessage.builder()
+                    .chatId(chatId.toString())
+                    .text("Ключ не найден.")
+                    .replyMarkup(keyboardMarkup)
+                    .build();
+        }
+
+        String created = formatInstant(target.getCreatedAt());
+        String text = "🔑 Ключ №" + (index + 1) + "\n" +
+                "Статус: " + keyStatusLabel(target) + "\n" +
+                "Создан: " + created;
+
+        InlineKeyboardButton bGet = InlineKeyboardButton.builder()
+                .text("📋 Получить ключ")
+                .callbackData("KEY_GET:" + target.getId())
+                .build();
+        InlineKeyboardButton bDelete = InlineKeyboardButton.builder()
+                .text("🗑 Удалить ключ")
+                .callbackData("KEY_DELETE:" + target.getId())
+                .build();
+        InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                .text("⬅️ Назад")
+                .callbackData("MENU_KEYS")
+                .build();
+
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(
+                        List.of(bGet),
+                        List.of(bDelete),
                         List.of(bBack)
                 ))
                 .build();
@@ -299,7 +440,7 @@ public class BotMenuService {
                 "Статус: активна\n" +
                 "⏳ Осталось: " + formatDaysLeft(daysLeft) + "\n" +
                 "🗓 Действует до: " + until + "\n" +
-                "Управление ключом и продление — ниже.";
+                "Управление ключами и продление — ниже.";
     }
 
     private String formatDaysLeft(long daysLeft) {
@@ -321,11 +462,11 @@ public class BotMenuService {
         return daysLeft + " " + word;
     }
 
-    private int discountPercent(int baseMonthlyPrice, SubscriptionPlansProperties.Plan plan) {
-        if (plan.getMonths() <= 1 || baseMonthlyPrice <= 0) return 0;
-        double baseTotal = baseMonthlyPrice * (double) plan.getMonths();
+    private int discountPercent(int baseMonthlyPrice, int planPrice, int months) {
+        if (months <= 1 || baseMonthlyPrice <= 0) return 0;
+        double baseTotal = baseMonthlyPrice * (double) months;
         if (baseTotal <= 0) return 0;
-        double discount = 100.0 - (plan.getPrice() / baseTotal) * 100.0;
+        double discount = 100.0 - (planPrice / baseTotal) * 100.0;
         int rounded = (int) Math.round(discount / 5.0) * 5;
         return Math.max(0, rounded);
     }
@@ -333,6 +474,22 @@ public class BotMenuService {
     private String normalizeLabel(String label, String fallback) {
         if (label == null || label.isBlank()) return fallback;
         return label;
+    }
+
+    private String keyStatusLabel(VpnKey key) {
+        if (key == null) return "неизвестно";
+        if (key.isRevoked() || key.getStatus() == VpnKey.Status.REVOKED) return "отозван";
+        return switch (key.getStatus()) {
+            case ACTIVE -> "активен";
+            case PENDING -> "выпускается";
+            case FAILED -> "ошибка";
+            case REVOKED -> "отозван";
+        };
+    }
+
+    private String formatInstant(Instant instant) {
+        if (instant == null) return "-";
+        return LocalDateTime.ofInstant(instant, ZoneId.systemDefault()).format(DT_FMT);
     }
 
     private String buildSupportUrl() {
