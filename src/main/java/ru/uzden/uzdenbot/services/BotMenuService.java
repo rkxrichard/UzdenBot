@@ -437,10 +437,12 @@ public class BotMenuService {
         }
 
         String created = formatInstant(target.getCreatedAt());
+        Optional<Subscription> keySubOpt = subscriptionService.getActiveSubscription(target);
         String text = "🔑 Ключ №" + (index + 1) + "\n" +
                 "Статус: " + keyStatusLabel(target) + "\n" +
                 "Осталось: " + keyDaysLeftText(target) + "\n" +
-                "Создан: " + created;
+                "Создан: " + created +
+                (keySubOpt.isPresent() ? "\nУдаление доступно после окончания срока." : "");
 
         InlineKeyboardButton bGet = InlineKeyboardButton.builder()
                 .text("📋 Получить ключ")
@@ -450,22 +452,25 @@ public class BotMenuService {
                 .text("🔁 Продлить")
                 .callbackData("KEY_RENEW:" + target.getId())
                 .build();
-        InlineKeyboardButton bDelete = InlineKeyboardButton.builder()
-                .text("🗑 Удалить ключ")
-                .callbackData("KEY_DELETE:" + target.getId())
-                .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
                 .text("⬅️ Назад")
                 .callbackData("MENU_KEYS")
                 .build();
 
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(bGet));
+        rows.add(List.of(bRenew));
+        if (keySubOpt.isEmpty()) {
+            InlineKeyboardButton bDelete = InlineKeyboardButton.builder()
+                    .text("🗑 Удалить ключ")
+                    .callbackData("KEY_DELETE:" + target.getId())
+                    .build();
+            rows.add(List.of(bDelete));
+        }
+        rows.add(List.of(bBack));
+
         InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
-                .keyboard(List.of(
-                        List.of(bGet),
-                        List.of(bRenew),
-                        List.of(bDelete),
-                        List.of(bBack)
-                ))
+                .keyboard(rows)
                 .build();
 
         return SendMessage.builder()

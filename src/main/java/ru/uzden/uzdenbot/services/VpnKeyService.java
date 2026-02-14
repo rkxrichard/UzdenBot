@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.entities.VpnKey;
+import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 import ru.uzden.uzdenbot.repositories.VpnKeyRepository;
 import ru.uzden.uzdenbot.xui.ThreeXuiClient;
@@ -91,6 +92,15 @@ public class VpnKeyService {
             throw new IllegalStateException("Ключ отозван");
         }
         return key;
+    }
+
+    public Optional<Subscription> getActiveSubscriptionForKey(VpnKey key) {
+        return subscriptionService.getActiveSubscription(key);
+    }
+
+    public boolean canDeleteKey(User user, long keyId) {
+        VpnKey key = findKeyForUser(user, keyId);
+        return !subscriptionService.hasActiveSubscriptionForKey(key);
     }
 
     public VpnKey getKeyForUser(User user, long keyId) {

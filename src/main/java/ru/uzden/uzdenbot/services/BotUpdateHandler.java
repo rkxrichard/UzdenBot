@@ -344,6 +344,33 @@ public class BotUpdateHandler {
         }
 
         try {
+            if (!vpnKeyService.canDeleteKey(user, keyId)) {
+                VpnKey key = vpnKeyService.findKeyForUser(user, keyId);
+                var activeSub = vpnKeyService.getActiveSubscriptionForKey(key);
+                String until = activeSub.isPresent()
+                        ? BotTextUtils.formatDate(activeSub.get().getEndDate())
+                        : "-";
+                InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
+                        .text("🔁 Продлить")
+                        .callbackData("KEY_RENEW:" + keyId)
+                        .build();
+                InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                        .text("⬅️ Назад")
+                        .callbackData("MENU_KEYS")
+                        .build();
+                InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
+                        .keyboard(List.of(List.of(bRenew), List.of(bBack)))
+                        .build();
+                SendMessage sm = SendMessage.builder()
+                        .chatId(chatId.toString())
+                        .text("❌ Ключ можно удалить только после окончания срока.\n" +
+                                "🗓 Действует до: " + until)
+                        .replyMarkup(markup)
+                        .build();
+                out.add(sm);
+                out.add(botMenuService.myKeysMenu(chatId, user));
+                return false;
+            }
             vpnKeyService.revokeKeyForUser(user, keyId);
             out.add(BotMessageFactory.simpleMessage(chatId, "🗑 Ключ удалён."));
         } catch (Exception e) {
