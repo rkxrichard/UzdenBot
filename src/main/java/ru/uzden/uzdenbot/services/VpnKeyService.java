@@ -267,18 +267,21 @@ public class VpnKeyService {
 
     private VpnKey buildPendingKey(Long userId) {
         VpnKey pending = new VpnKey();
-        pending.setUser(userRepository.getReferenceById(userId));
+        User userRef = userRepository.getReferenceById(userId);
+        pending.setUser(userRef);
 
         UUID clientUuid = UUID.randomUUID();
         pending.setClientUuid(clientUuid);
 
         // лучше стабильно, чтобы в панели было понятно чей ключ
         // telegramId у тебя есть в User
-        Long tg = userRepository.getReferenceById(userId).getTelegramId();
+        Long tg = userRef.getTelegramId();
+        String uname = normalizeUsername(userRef.getUsername());
         // В 3x-ui поле email должно быть уникальным внутри inbound.
         // Поэтому добавляем кусок uuid, чтобы повторная/параллельная выдача не падала Duplicate email.
         String shortUuid = clientUuid.toString().substring(0, 8);
-        pending.setClientEmail("tg_" + tg + "_" + shortUuid);
+        String identity = (uname == null) ? "tg_" + tg : "tg_" + uname + "_" + tg;
+        pending.setClientEmail(identity + "_" + shortUuid);
         pending.setStatus(VpnKey.Status.PENDING);
         pending.setRevoked(false);
 
@@ -296,6 +299,28 @@ public class VpnKeyService {
             this.oldInboundId = oldInboundId;
             this.oldClientUuid = oldClientUuid;
         }
+    }
+
+    private String normalizeUsername(String username) {
+        if (username == null) return null;
+        String trimmed = username.trim();
+        if (trimmed.isEmpty()) return null;
+        if (trimmed.startsWith("@")) {
+            trimmed = trimmed.substring(1);
+        }
+        if (trimmed.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '-') {
+                sb.append(Character.toLowerCase(c));
+            } else {
+                sb.append('_');
+            }
+        }
+        String normalized = sb.toString().replaceAll("_+", "_");
+        normalized = normalized.replaceAll("^_+", "").replaceAll("_+$", "");
+        return normalized.isEmpty() ? null : normalized;
     }
 
 
