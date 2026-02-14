@@ -51,7 +51,7 @@ public class SubscriptionNotificationService {
         String until = BotTextUtils.formatDate(sub.getEndDate());
         String msg = title + "\n" +
                 "🗓 Действует до: " + until + "\n" +
-                "Продлите в разделе «Подписка и тарифы».";
+                "Продлите в разделе «Мои ключи».";
         try {
             SendMessage sm = SendMessage.builder()
                     .chatId(user.getTelegramId().toString())

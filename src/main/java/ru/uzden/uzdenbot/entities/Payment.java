@@ -19,6 +19,10 @@ public class Payment {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "key_id")
+    private VpnKey vpnKey;
+
     @Column(name = "amount", nullable = false)
     private BigDecimal amount;
 

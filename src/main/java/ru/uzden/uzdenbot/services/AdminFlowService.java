@@ -56,7 +56,14 @@ public class AdminFlowService {
             return;
         }
 
-        Subscription sub = subscriptionService.extendSubscription(userOpt.get(), days);
+        User user = userOpt.get();
+        Subscription sub;
+        var keys = vpnKeyService.listUserKeys(user);
+        if (!keys.isEmpty()) {
+            sub = subscriptionService.extendSubscriptionForKey(user, keys.get(0), days);
+        } else {
+            sub = subscriptionService.extendSubscription(user, days);
+        }
         adminStateService.clear(chatId);
         out.add(BotMessageFactory.simpleMessage(chatId, "✅ Подписка выдана до: " + BotTextUtils.formatDate(sub.getEndDate())));
     }

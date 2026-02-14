@@ -17,6 +17,7 @@ import java.lang.reflect.Field;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -30,7 +31,6 @@ class BotUpdateHandlerTest {
         AdminStateService adminStateService = mock(AdminStateService.class);
         AdminFlowService adminFlowService = mock(AdminFlowService.class);
         UserService userService = mock(UserService.class);
-        SubscriptionService subscriptionService = mock(SubscriptionService.class);
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
@@ -42,7 +42,6 @@ class BotUpdateHandlerTest {
                 adminStateService,
                 adminFlowService,
                 userService,
-                subscriptionService,
                 vpnKeyService,
                 idempotencyService,
                 paymentService,
@@ -77,7 +76,6 @@ class BotUpdateHandlerTest {
         AdminStateService adminStateService = mock(AdminStateService.class);
         AdminFlowService adminFlowService = mock(AdminFlowService.class);
         UserService userService = mock(UserService.class);
-        SubscriptionService subscriptionService = mock(SubscriptionService.class);
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
@@ -89,7 +87,6 @@ class BotUpdateHandlerTest {
                 adminStateService,
                 adminFlowService,
                 userService,
-                subscriptionService,
                 vpnKeyService,
                 idempotencyService,
                 paymentService,
@@ -118,7 +115,6 @@ class BotUpdateHandlerTest {
         AdminStateService adminStateService = mock(AdminStateService.class);
         AdminFlowService adminFlowService = mock(AdminFlowService.class);
         UserService userService = mock(UserService.class);
-        SubscriptionService subscriptionService = mock(SubscriptionService.class);
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
@@ -130,7 +126,6 @@ class BotUpdateHandlerTest {
                 adminStateService,
                 adminFlowService,
                 userService,
-                subscriptionService,
                 vpnKeyService,
                 idempotencyService,
                 paymentService,
@@ -142,12 +137,13 @@ class BotUpdateHandlerTest {
         User user = new User();
         user.setId(7L);
         when(userService.registerOrUpdate(any(org.telegram.telegrambots.meta.api.objects.User.class))).thenReturn(user);
-        when(subscriptionService.hasActiveSubscription(user)).thenReturn(false);
+        when(idempotencyService.tryAcquire(any(), any())).thenReturn(true);
+        SendMessage menu = SendMessage.builder().chatId("1").text("keys").build();
+        when(botMenuService.myKeysMenu(1L, user)).thenReturn(menu);
+        when(vpnKeyService.getKeyForUser(eq(user), eq(1L)))
+                .thenThrow(new IllegalStateException("Нет активной подписки"));
 
-        SendMessage menu = SendMessage.builder().chatId("1").text("sub").build();
-        when(botMenuService.subscriptionMenu(1L)).thenReturn(menu);
-
-        Update update = callbackUpdate(1L, 100L, "cb2", "MENU_GET_KEY");
+        Update update = callbackUpdate(1L, 100L, "cb2", "KEY_GET:1");
         List<BotApiMethod<?>> result = handler.handle(update);
 
         assertEquals(3, result.size());
@@ -163,7 +159,6 @@ class BotUpdateHandlerTest {
         AdminStateService adminStateService = mock(AdminStateService.class);
         AdminFlowService adminFlowService = mock(AdminFlowService.class);
         UserService userService = mock(UserService.class);
-        SubscriptionService subscriptionService = mock(SubscriptionService.class);
         VpnKeyService vpnKeyService = mock(VpnKeyService.class);
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
@@ -175,7 +170,6 @@ class BotUpdateHandlerTest {
                 adminStateService,
                 adminFlowService,
                 userService,
-                subscriptionService,
                 vpnKeyService,
                 idempotencyService,
                 paymentService,

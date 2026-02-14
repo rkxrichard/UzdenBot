@@ -12,6 +12,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import ru.uzden.uzdenbot.config.SubscriptionPlansProperties;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.utils.BotMessageFactory;
 import ru.uzden.uzdenbot.utils.BotTextUtils;
 
@@ -30,7 +31,6 @@ public class BotUpdateHandler {
     private final AdminStateService adminStateService;
     private final AdminFlowService adminFlowService;
     private final UserService userService;
-    private final SubscriptionService subscriptionService;
     private final VpnKeyService vpnKeyService;
     private final IdempotencyService idempotencyService;
     private final PaymentService paymentService;
@@ -122,6 +122,40 @@ public class BotUpdateHandler {
         } else if (data != null && data.startsWith("KEY_DELETE:")) {
             Long keyId = parseKeyId(data, "KEY_DELETE:");
             answered = handleKeyDelete(out, chatId, callbackId, user, keyId);
+        } else if (data != null && data.startsWith("KEY_RENEW:")) {
+            Long keyId = parseKeyId(data, "KEY_RENEW:");
+            if (keyId != null) {
+                out.add(BotMessageFactory.editFromSendMessage(
+                        botMenuService.keyPlanMenu(chatId, user, keyId, false), chatId, messageId));
+            } else {
+                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось определить ключ."));
+            }
+        } else if ("KEY_NEW_BUY_1M".equals(data)) {
+            SubscriptionPlansProperties.Plan p1 = subscriptionPlansProperties.getPlan1();
+            answered = handleKeyPlanPurchase(out, chatId, callbackId, user, null,
+                    p1.getDays(), p1.getPrice(), planLabel(p1, "1 месяц"));
+        } else if ("KEY_NEW_BUY_2M".equals(data)) {
+            SubscriptionPlansProperties.Plan p2 = subscriptionPlansProperties.getPlan2();
+            answered = handleKeyPlanPurchase(out, chatId, callbackId, user, null,
+                    p2.getDays(), p2.getPrice(), planLabel(p2, "2 месяца"));
+        } else if (data != null && data.startsWith("KEY_RENEW_1M:")) {
+            Long keyId = parseKeyId(data, "KEY_RENEW_1M:");
+            if (keyId == null) {
+                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось определить ключ."));
+            } else {
+                SubscriptionPlansProperties.Plan p1 = subscriptionPlansProperties.getPlan1();
+                answered = handleKeyPlanPurchase(out, chatId, callbackId, user, keyId,
+                        p1.getDays(), p1.getPrice(), planLabel(p1, "1 месяц"));
+            }
+        } else if (data != null && data.startsWith("KEY_RENEW_2M:")) {
+            Long keyId = parseKeyId(data, "KEY_RENEW_2M:");
+            if (keyId == null) {
+                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось определить ключ."));
+            } else {
+                SubscriptionPlansProperties.Plan p2 = subscriptionPlansProperties.getPlan2();
+                answered = handleKeyPlanPurchase(out, chatId, callbackId, user, keyId,
+                        p2.getDays(), p2.getPrice(), planLabel(p2, "2 месяца"));
+            }
         } else {
             switch (data) {
             case "MENU_SUBSCRIPTION" -> out.add(BotMessageFactory.editFromSendMessage(
@@ -142,19 +176,27 @@ public class BotUpdateHandler {
                             botMenuService.adminMenu(chatId), chatId, messageId));
                 }
             }
-            case "MENU_BUY" -> out.add(BotMessageFactory.editFromSendMessage(
-                    botMenuService.subscriptionPlanMenu(chatId), chatId, messageId));
+            case "MENU_BUY" -> {
+                if (vpnKeyService.listUserKeys(user).isEmpty()) {
+                    out.add(BotMessageFactory.editFromSendMessage(
+                            botMenuService.subscriptionPlanMenu(chatId), chatId, messageId));
+                } else {
+                    out.add(BotMessageFactory.editFromSendMessage(
+                            botMenuService.myKeysMenu(chatId, user), chatId, messageId));
+                }
+            }
             case "BUY_1M" -> {
                 SubscriptionPlansProperties.Plan p1 = subscriptionPlansProperties.getPlan1();
-                answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(),
+                answered = handleKeyPlanPurchase(out, chatId, callbackId, user, null,
                         p1.getDays(), p1.getPrice(), planLabel(p1, "1 месяц"));
             }
             case "BUY_2M" -> {
                 SubscriptionPlansProperties.Plan p2 = subscriptionPlansProperties.getPlan2();
-                answered = handlePlanPurchase(out, chatId, callbackId, cq.getFrom(),
+                answered = handleKeyPlanPurchase(out, chatId, callbackId, user, null,
                         p2.getDays(), p2.getPrice(), planLabel(p2, "2 месяца"));
             }
-            case "KEY_NEW" -> answered = handleKeyNew(out, chatId, callbackId, user);
+            case "KEY_NEW" -> out.add(BotMessageFactory.editFromSendMessage(
+                    botMenuService.keyPlanMenu(chatId, user, null, true), chatId, messageId));
             case "MENU_GET_KEY" -> out.add(BotMessageFactory.editFromSendMessage(
                     botMenuService.myKeysMenu(chatId, user), chatId, messageId));
             case "MENU_REPLACE_KEY" -> out.add(BotMessageFactory.editFromSendMessage(
@@ -240,47 +282,10 @@ public class BotUpdateHandler {
         return out;
     }
 
-    private boolean handleKeyNew(List<BotApiMethod<?>> out, Long chatId, String callbackId, User user) {
-        if (!subscriptionService.hasActiveSubscription(user)) {
-            out.add(BotMessageFactory.simpleMessage(chatId,
-                    "❌ У вас нет активной подписки. Сначала купите/продлите подписку."));
-            out.add(botMenuService.subscriptionMenu(chatId));
-            return false;
-        }
-
-        if (!acquireIdempotency(out, callbackId, "new_key:" + user.getId())) {
-            return true;
-        }
-
-        try {
-            var key = vpnKeyService.issueKey(user);
-            String msg = "🔑 Новый VPN-ключ:\n\n" +
-                    "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
-                    "📌 Скопируйте ссылку и импортируйте в клиент.";
-            SendMessage sm = SendMessage.builder()
-                    .chatId(chatId.toString())
-                    .text(msg)
-                    .parseMode("HTML")
-                    .build();
-            out.add(sm);
-        } catch (Exception e) {
-            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось создать ключ: " + e.getMessage()));
-        }
-
-        out.add(botMenuService.myKeysMenu(chatId, user));
-        return false;
-    }
-
     private boolean handleKeyGet(List<BotApiMethod<?>> out, Long chatId, String callbackId, User user, Long keyId) {
         if (keyId == null) {
             out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось определить ключ."));
             out.add(botMenuService.myKeysMenu(chatId, user));
-            return false;
-        }
-        if (!subscriptionService.hasActiveSubscription(user)) {
-            out.add(BotMessageFactory.simpleMessage(chatId,
-                    "❌ У вас нет активной подписки. Сначала купите/продлите подписку."));
-            out.add(botMenuService.subscriptionMenu(chatId));
             return false;
         }
 
@@ -300,7 +305,27 @@ public class BotUpdateHandler {
                     .build();
             out.add(sm);
         } catch (Exception e) {
-            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось получить ключ: " + e.getMessage()));
+            if (isNoActiveSubscriptionError(e)) {
+                InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
+                        .text("🔁 Продлить")
+                        .callbackData("KEY_RENEW:" + keyId)
+                        .build();
+                InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                        .text("⬅️ Назад")
+                        .callbackData("MENU_KEYS")
+                        .build();
+                InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
+                        .keyboard(List.of(List.of(bRenew), List.of(bBack)))
+                        .build();
+                SendMessage sm = SendMessage.builder()
+                        .chatId(chatId.toString())
+                        .text("❌ Для этого ключа нет активной подписки.\nХотите продлить?")
+                        .replyMarkup(markup)
+                        .build();
+                out.add(sm);
+            } else {
+                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось получить ключ: " + e.getMessage()));
+            }
         }
 
         out.add(botMenuService.myKeysMenu(chatId, user));
@@ -329,24 +354,33 @@ public class BotUpdateHandler {
         return false;
     }
 
-    private boolean handlePlanPurchase(List<BotApiMethod<?>> out, Long chatId, String callbackId,
-                                    org.telegram.telegrambots.meta.api.objects.User from,
-                                    int days, int price, String label) {
-        User user = userService.registerOrUpdate(from);
-        if (!acquireIdempotency(out, callbackId, "plan:" + days + ":" + user.getId())) {
+    private boolean handleKeyPlanPurchase(List<BotApiMethod<?>> out, Long chatId, String callbackId,
+                                          User user, Long keyId, int days, int price, String label) {
+        if (!acquireIdempotency(out, callbackId, "plan:" + days + ":" + user.getId() + ":" + (keyId == null ? "new" : keyId))) {
             return true;
         }
-        int activeKeys = (int) vpnKeyService.countActiveKeys(user);
-        int multiplier = vpnKeyService.getActiveKeyMultiplier(user);
-        int finalPrice = price * multiplier;
-        String labelWithKeys = multiplier > 1 ? label + " (x" + multiplier + ")" : label;
+        if (keyId == null && !vpnKeyService.canCreateNewKey(user)) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Достигнут лимит ключей (макс 3)."));
+            out.add(botMenuService.myKeysMenu(chatId, user));
+            return false;
+        }
+        VpnKey targetKey = null;
+        if (keyId != null) {
+            try {
+                targetKey = vpnKeyService.findKeyForUser(user, keyId);
+            } catch (Exception e) {
+                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Ключ не найден."));
+                out.add(botMenuService.myKeysMenu(chatId, user));
+                return false;
+            }
+        }
         try {
-            PaymentService.PaymentInitResult init = paymentService.createPayment(user, days, finalPrice, labelWithKeys);
+            PaymentService.PaymentInitResult init = paymentService.createPayment(user, targetKey, days, price, label);
             String url = init.confirmationUrl();
             if (url != null && !url.isBlank()) {
                 String msg = "💳 Счет на " + label + " создан.\n" +
-                        (multiplier > 1 ? "Ключей: " + activeKeys + " (x" + multiplier + ")\n" : "") +
-                        "Сумма: " + finalPrice + "₽\n\n" +
+                        (keyId == null ? "Назначение: новый ключ\n" : "Назначение: продление ключа\n") +
+                        "Сумма: " + price + "₽\n\n" +
                         "Оплатить: <a href=\"" + BotTextUtils.escapeHtml(url) + "\">перейти к оплате</a>\n\n" +
                         "После оплаты подписка активируется автоматически.";
                 SendMessage sm = SendMessage.builder()
@@ -357,8 +391,8 @@ public class BotUpdateHandler {
                 out.add(sm);
             } else {
                 String msg = "💳 Счет на " + label + " создан.\n" +
-                        (multiplier > 1 ? "Ключей: " + activeKeys + " (x" + multiplier + ")\n" : "") +
-                        "Сумма: " + finalPrice + "₽\n" +
+                        (keyId == null ? "Назначение: новый ключ\n" : "Назначение: продление ключа\n") +
+                        "Сумма: " + price + "₽\n" +
                         "Ссылка на оплату пока недоступна. Попробуйте еще раз чуть позже.";
                 out.add(BotMessageFactory.simpleMessage(chatId, msg));
             }
@@ -378,6 +412,13 @@ public class BotUpdateHandler {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private boolean isNoActiveSubscriptionError(Exception e) {
+        String msg = e == null ? null : e.getMessage();
+        if (msg == null) return false;
+        String lower = msg.toLowerCase();
+        return lower.contains("нет активной подписки");
     }
 
     private String planLabel(SubscriptionPlansProperties.Plan plan, String fallback) {

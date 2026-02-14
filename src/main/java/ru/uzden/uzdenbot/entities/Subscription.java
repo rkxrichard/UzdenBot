@@ -19,6 +19,10 @@ public class Subscription {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "key_id")
+    private VpnKey vpnKey;
+
     @Column(name = "start_date")
     private LocalDateTime startDate;
 

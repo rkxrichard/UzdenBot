@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -16,6 +17,12 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
 
     // Активная подписка
     Optional<Subscription> findTopByUserAndEndDateAfterOrderByEndDateDesc(User user, LocalDateTime now);
+
+    // Активная подписка по ключу
+    Optional<Subscription> findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(VpnKey vpnKey, LocalDateTime now);
+
+    // Последняя подписка по ключу
+    Optional<Subscription> findTopByVpnKeyOrderByEndDateDesc(VpnKey vpnKey);
 
     List<Subscription> findByEndDateAfter(LocalDateTime now);
 }

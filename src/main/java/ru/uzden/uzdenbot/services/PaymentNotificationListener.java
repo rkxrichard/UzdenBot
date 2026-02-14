@@ -34,10 +34,10 @@ public class PaymentNotificationListener {
         try {
             SendMessage statusMessage = buildStatusMessage(event);
             mainBot.execute(statusMessage);
-            if ("succeeded".equalsIgnoreCase(event.status())) {
-                sendKeyIfPossible(user);
+            if ("succeeded".equalsIgnoreCase(event.status()) && event.newKey() && event.keyId() != null) {
+                sendKeyIfPossible(user, event.keyId());
             }
-            mainBot.execute(botMenuService.subscriptionMenu(event.telegramId()));
+            mainBot.execute(botMenuService.myKeysMenu(event.telegramId(), user));
         } catch (Exception e) {
             log.warn("Failed to send payment notification for paymentId={}: {}", event.paymentId(), e.getMessage());
         }
@@ -57,7 +57,8 @@ public class PaymentNotificationListener {
             text = "✅ Оплата прошла успешно.\n" +
                     "Тариф: " + label + "\n" +
                     (amount.isBlank() ? "" : "Сумма: " + amount + "\n") +
-                    "🗓 Действует до: " + until;
+                    "🗓 Действует до: " + until + "\n" +
+                    "Управление ключами — в разделе «Мои ключи».";
         } else {
             text = "❌ Оплата не прошла или была отменена.\n" +
                     "Вы можете попробовать снова.";
@@ -69,9 +70,9 @@ public class PaymentNotificationListener {
                 .build();
     }
 
-    private void sendKeyIfPossible(User user) {
+    private void sendKeyIfPossible(User user, Long keyId) {
         try {
-            var key = vpnKeyService.issueKeyAuto(user);
+            var key = vpnKeyService.getKeyForUser(user, keyId);
             String msg = "🔑 Ваш VPN-ключ:\n\n" +
                     "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
                     "📌 Скопируйте ссылку и импортируйте в клиент.";

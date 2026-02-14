@@ -70,10 +70,10 @@ public class VpnKeyService {
         return vpnKeyRepository.countActiveKeys(user.getId());
     }
 
-    public int getActiveKeyMultiplier(User user) {
-        long active = countActiveKeys(user);
-        if (active <= 1) return 1;
-        return (int) Math.min(MAX_KEYS_PER_USER, active);
+    public boolean canCreateNewKey(User user) {
+        if (user == null || user.getId() == null) return false;
+        long existing = vpnKeyRepository.countNonRevokedKeys(user.getId());
+        return existing < MAX_KEYS_PER_USER;
     }
 
     public List<VpnKey> listUserKeys(User user) {
@@ -81,15 +81,22 @@ public class VpnKeyService {
         return vpnKeyRepository.findUserKeys(user.getId());
     }
 
-    public VpnKey getKeyForUser(User user, long keyId) {
+    public VpnKey findKeyForUser(User user, long keyId) {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("User is required");
         }
         VpnKey key = vpnKeyRepository.findByIdAndUserId(keyId, user.getId())
                 .orElseThrow(() -> new IllegalStateException("Ключ не найден"));
-
         if (key.isRevoked() || key.getStatus() == VpnKey.Status.REVOKED) {
             throw new IllegalStateException("Ключ отозван");
+        }
+        return key;
+    }
+
+    public VpnKey getKeyForUser(User user, long keyId) {
+        VpnKey key = findKeyForUser(user, keyId);
+        if (!subscriptionService.hasActiveSubscriptionForKey(key)) {
+            throw new IllegalStateException("Нет активной подписки для этого ключа");
         }
 
         if (key.getStatus() == VpnKey.Status.ACTIVE) {
@@ -100,6 +107,13 @@ public class VpnKeyService {
         }
 
         return finalizeIssueOutsideTx(key.getId());
+    }
+
+    public VpnKey createPendingKey(User user) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is required");
+        }
+        return tx.execute(status -> createNewPendingKeyTx(user.getId()));
     }
 
     public void revokeKeyForUser(User user, long keyId) {
@@ -125,10 +139,6 @@ public class VpnKeyService {
      * Устойчиво: PENDING -> (3x-ui) -> ACTIVE, при ошибке FAILED.
      */
     public VpnKey issueKey(User user) {
-        if(!subscriptionService.hasActiveSubscription(user)) {
-            throw new IllegalStateException("Нет активной подписки");
-        }
-
         VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId()));
         return finalizeIssueOutsideTx(key.getId());
     }
@@ -138,19 +148,7 @@ public class VpnKeyService {
      * Уменьшает риск ошибки "no active transaction" в фоновом обработчике.
      */
     public VpnKey issueKeyAuto(User user) {
-        if(!subscriptionService.hasActiveSubscription(user)) {
-            throw new IllegalStateException("Нет активной подписки");
-        }
-
-        VpnKey key = tx.execute(status -> createOrGetActiveOrPendingNoLock(user.getId()));
-
-        if (key.getStatus() == VpnKey.Status.ACTIVE && !key.isRevoked()) {
-            if (needsLinkRefresh(key)) {
-                return refreshActiveLink(key);
-            }
-            return key;
-        }
-
+        VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId()));
         return finalizeIssueOutsideTx(key.getId());
     }
 

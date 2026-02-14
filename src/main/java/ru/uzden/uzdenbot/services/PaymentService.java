@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.uzden.uzdenbot.entities.Payment;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.repositories.PaymentRepository;
 import ru.uzden.uzdenbot.yookassa.YooKassaClient;
 import ru.uzden.uzdenbot.yookassa.YooKassaConfirmation;
@@ -41,6 +42,7 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final SubscriptionService subscriptionService;
+    private final VpnKeyService vpnKeyService;
     private final YooKassaClient yooKassaClient;
     private final YooKassaProperties properties;
     private final ApplicationEventPublisher eventPublisher;
@@ -52,8 +54,14 @@ public class PaymentService {
 
     @Transactional
     public PaymentInitResult createPayment(User user, int days, int price, String label) {
+        return createPayment(user, null, days, price, label);
+    }
+
+    @Transactional
+    public PaymentInitResult createPayment(User user, VpnKey vpnKey, int days, int price, String label) {
         BigDecimal amount = BigDecimal.valueOf(price).setScale(2);
         Payment payment = new Payment(user, amount, "pending");
+        payment.setVpnKey(vpnKey);
         payment.setProvider(PROVIDER);
         payment.setPlanDays(days);
         payment.setPlanLabel(label);
@@ -226,7 +234,24 @@ public class PaymentService {
                 return false;
             }
 
-            var sub = subscriptionService.extendSubscription(payment.getUser(), days);
+            VpnKey key = payment.getVpnKey();
+            boolean newKey = false;
+            if (key == null) {
+                if (!vpnKeyService.canCreateNewKey(payment.getUser())) {
+                    log.warn("Key limit reached for userId={} paymentId={}", payment.getUser().getId(), payment.getId());
+                    paymentRepository.save(payment);
+                    return false;
+                }
+                key = vpnKeyService.createPendingKey(payment.getUser());
+                payment.setVpnKey(key);
+                newKey = true;
+            } else if (key.getUser() != null && !key.getUser().getId().equals(payment.getUser().getId())) {
+                log.warn("Payment key/user mismatch paymentId={} keyId={} userId={}", payment.getId(), key.getId(), payment.getUser().getId());
+                paymentRepository.save(payment);
+                return false;
+            }
+
+            var sub = subscriptionService.extendSubscriptionForKey(payment.getUser(), key, days);
             payment.setPaidAt(Instant.now());
             payment.setProcessedAt(Instant.now());
             paymentRepository.save(payment);
@@ -237,7 +262,9 @@ public class PaymentService {
                     "succeeded",
                     payment.getPlanLabel(),
                     payment.getAmount(),
-                    sub.getEndDate()
+                    sub.getEndDate(),
+                    key == null ? null : key.getId(),
+                    newKey
             ));
             return true;
         }
@@ -256,7 +283,9 @@ public class PaymentService {
                     "canceled",
                     payment.getPlanLabel(),
                     payment.getAmount(),
-                    null
+                    null,
+                    payment.getVpnKey() == null ? null : payment.getVpnKey().getId(),
+                    false
             ));
             return true;
         }
@@ -353,7 +382,9 @@ public class PaymentService {
             String status,
             String planLabel,
             BigDecimal amount,
-            LocalDateTime subscriptionEndDate
+            LocalDateTime subscriptionEndDate,
+            Long keyId,
+            boolean newKey
     ) {
     }
 }

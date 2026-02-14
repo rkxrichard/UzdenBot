@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.repositories.SubscriptionRepository;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 
@@ -28,6 +29,10 @@ public class SubscriptionService {
         return subscriptionRepository.findTopByUserAndEndDateAfterOrderByEndDateDesc(user, LocalDateTime.now()).isPresent();
     }
 
+    public boolean hasActiveSubscriptionForKey(VpnKey key) {
+        if (key == null) return false;
+        return subscriptionRepository.findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(key, LocalDateTime.now()).isPresent();
+    }
 
     @Transactional
     public Subscription extendSubscription(User user, int days) {
@@ -55,6 +60,35 @@ public class SubscriptionService {
         return subscriptionRepository.save(subscription);
     }
 
+    @Transactional
+    public Subscription extendSubscriptionForKey(User user, VpnKey key, int days) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is required");
+        }
+        if (key == null || key.getId() == null) {
+            throw new IllegalArgumentException("Key is required");
+        }
+        userRepository.lockUser(user.getId());
+
+        LocalDateTime now = LocalDateTime.now();
+        Instant createdAt = Instant.now();
+
+        LocalDateTime start = subscriptionRepository
+                .findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(key, now)
+                .map(Subscription::getEndDate)
+                .orElse(now);
+
+        Subscription subscription = new Subscription();
+        subscription.setUser(user);
+        subscription.setVpnKey(key);
+        subscription.setStartDate(start);
+        subscription.setEndDate(start.plusDays(days));
+        subscription.setCreatedAt(createdAt);
+        subscription.setActive(true);
+
+        return subscriptionRepository.save(subscription);
+    }
+
     @Transactional(readOnly = true)
     public Optional<Subscription> getActiveSubscription(User user) {
         return subscriptionRepository.findTopByUserAndEndDateAfterOrderByEndDateDesc(
@@ -63,9 +97,23 @@ public class SubscriptionService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<Subscription> getActiveSubscription(VpnKey key) {
+        if (key == null) return Optional.empty();
+        return subscriptionRepository.findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(
+                key, LocalDateTime.now()
+        );
+    }
+
+    @Transactional(readOnly = true)
     public Optional<Subscription> getLastSubscription(User user) {
         if (user == null) return Optional.empty();
         return subscriptionRepository.findTopByUserOrderByEndDateDesc(user);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Subscription> getLastSubscription(VpnKey key) {
+        if (key == null) return Optional.empty();
+        return subscriptionRepository.findTopByVpnKeyOrderByEndDateDesc(key);
     }
 
     @Transactional
