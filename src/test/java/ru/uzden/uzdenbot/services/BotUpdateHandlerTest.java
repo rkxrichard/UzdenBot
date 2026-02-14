@@ -56,7 +56,7 @@ class BotUpdateHandlerTest {
         when(userService.registerOrUpdate(any(org.telegram.telegrambots.meta.api.objects.User.class))).thenReturn(user);
 
         SendMessage menu = SendMessage.builder().chatId("1").text("main").build();
-        when(botMenuService.mainMenu(eq(1L), eq(false))).thenReturn(menu);
+        when(botMenuService.mainMenu(eq(1L), eq(false), eq(user))).thenReturn(menu);
         SendMessage cmd = SendMessage.builder().chatId("1").text("\u200B").build();
         when(botMenuService.commandKeyboardMessage(eq(1L), eq(false))).thenReturn(cmd);
 
