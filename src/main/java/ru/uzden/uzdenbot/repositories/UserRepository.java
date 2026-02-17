@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import ru.uzden.uzdenbot.entities.User;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -15,6 +16,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
     Optional<User> findUserByTelegramId(Long telegramId);
 
     Optional<User> findUserByUsernameIgnoreCase(String username);
+
+    List<User> findByDisabledTrue();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")

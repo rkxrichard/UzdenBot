@@ -119,6 +119,9 @@ public class BotUpdateHandler {
         } else if (data != null && data.startsWith("KEY_GET:")) {
             Long keyId = parseKeyId(data, "KEY_GET:");
             answered = handleKeyGet(out, chatId, callbackId, user, keyId);
+        } else if (data != null && data.startsWith("KEY_REPLACE:")) {
+            Long keyId = parseKeyId(data, "KEY_REPLACE:");
+            answered = handleKeyReplace(out, chatId, callbackId, user, keyId);
         } else if (data != null && data.startsWith("KEY_DELETE:")) {
             Long keyId = parseKeyId(data, "KEY_DELETE:");
             answered = handleKeyDelete(out, chatId, callbackId, user, keyId);
@@ -174,6 +177,11 @@ public class BotUpdateHandler {
                     adminStateService.clear(chatId);
                     out.add(BotMessageFactory.editFromSendMessage(
                             botMenuService.adminMenu(chatId), chatId, messageId));
+                }
+            }
+            case "ADMIN_ACTIVE_USERS" -> {
+                if (isAdmin) {
+                    out.add(adminFlowService.buildActiveUsersMessage(chatId));
                 }
             }
             case "MENU_BUY" -> {
@@ -252,7 +260,7 @@ public class BotUpdateHandler {
                             .build();
                     SendMessage sm = SendMessage.builder()
                             .chatId(chatId.toString())
-                            .text("Удалить все отключённые ключи? Действие необратимо.")
+                            .text("Удалить всех отключённых пользователей и их ключи? Действие необратимо.")
                             .replyMarkup(markup)
                             .build();
                     out.add(sm);
@@ -260,10 +268,10 @@ public class BotUpdateHandler {
             }
             case "ADMIN_PURGE_DISABLED_CONFIRM" -> {
                 if (isAdmin) {
-                    int removed = vpnKeyService.purgeRevokedKeys();
+                    int removed = vpnKeyService.purgeDisabledUsers();
                     String msg = removed == 0
-                            ? "🧹 Отключённых ключей для удаления нет."
-                            : "🧹 Удалено отключённых ключей: " + removed;
+                            ? "🧹 Отключённых пользователей для удаления нет."
+                            : "🧹 Удалено отключённых пользователей: " + removed;
                     out.add(BotMessageFactory.simpleMessage(chatId, msg));
                 }
             }
@@ -378,6 +386,57 @@ public class BotUpdateHandler {
             out.add(BotMessageFactory.simpleMessage(chatId, "🗑 Ключ удалён."));
         } catch (Exception e) {
             out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось удалить ключ: " + e.getMessage()));
+        }
+
+        out.add(botMenuService.myKeysMenu(chatId, user));
+        return false;
+    }
+
+    private boolean handleKeyReplace(List<BotApiMethod<?>> out, Long chatId, String callbackId, User user, Long keyId) {
+        if (keyId == null) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось определить ключ."));
+            out.add(botMenuService.myKeysMenu(chatId, user));
+            return false;
+        }
+
+        if (!acquireIdempotency(out, callbackId, "replace_key:" + user.getId() + ":" + keyId)) {
+            return true;
+        }
+
+        try {
+            vpnKeyService.ensureKeyForActiveSubscription(user);
+            var key = vpnKeyService.replaceKeyForUser(user, keyId);
+            String msg = "🔄 Ключ заменён. Новый ключ:\n\n" +
+                    "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
+                    "📌 Старый ключ отключён.";
+            SendMessage sm = SendMessage.builder()
+                    .chatId(chatId.toString())
+                    .text(msg)
+                    .parseMode("HTML")
+                    .build();
+            out.add(sm);
+        } catch (Exception e) {
+            if (isNoActiveSubscriptionError(e)) {
+                InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
+                        .text("🔁 Продлить")
+                        .callbackData("KEY_RENEW:" + keyId)
+                        .build();
+                InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                        .text("⬅️ Назад")
+                        .callbackData("MENU_KEYS")
+                        .build();
+                InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
+                        .keyboard(List.of(List.of(bRenew), List.of(bBack)))
+                        .build();
+                SendMessage sm = SendMessage.builder()
+                        .chatId(chatId.toString())
+                        .text("❌ Для этого ключа нет активной подписки.\nХотите продлить?")
+                        .replyMarkup(markup)
+                        .build();
+                out.add(sm);
+            } else {
+                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось заменить ключ: " + e.getMessage()));
+            }
         }
 
         out.add(botMenuService.myKeysMenu(chatId, user));

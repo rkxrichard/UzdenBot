@@ -108,6 +108,10 @@ public class BotMenuService {
                 .text("🔎 Проверить подписку")
                 .callbackData("ADMIN_CHECK_SUB")
                 .build();
+        InlineKeyboardButton bActiveUsers = InlineKeyboardButton.builder()
+                .text("👥 Активные пользователи")
+                .callbackData("ADMIN_ACTIVE_USERS")
+                .build();
         InlineKeyboardButton bRevokeSub = InlineKeyboardButton.builder()
                 .text("🛑 Отключить подписку")
                 .callbackData("ADMIN_REVOKE_SUB")
@@ -133,6 +137,7 @@ public class BotMenuService {
                 .keyboard(List.of(
                         List.of(bAddSub),
                         List.of(bCheckSub),
+                        List.of(bActiveUsers),
                         List.of(bRevokeSub),
                         List.of(bDisableUser),
                         List.of(bEnableUser),
@@ -452,6 +457,10 @@ public class BotMenuService {
                 .text("📋 Получить ключ")
                 .callbackData("KEY_GET:" + target.getId())
                 .build();
+        InlineKeyboardButton bReplace = InlineKeyboardButton.builder()
+                .text("♻️ Заменить ключ")
+                .callbackData("KEY_REPLACE:" + target.getId())
+                .build();
         InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
                 .text("🔁 Продлить")
                 .callbackData("KEY_RENEW:" + target.getId())
@@ -463,6 +472,7 @@ public class BotMenuService {
 
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(bGet));
+        rows.add(List.of(bReplace));
         rows.add(List.of(bRenew));
         if (keySubOpt.isEmpty()) {
             InlineKeyboardButton bDelete = InlineKeyboardButton.builder()

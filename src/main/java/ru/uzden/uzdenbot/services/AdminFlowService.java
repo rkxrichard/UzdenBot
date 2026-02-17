@@ -38,6 +38,29 @@ public class AdminFlowService {
         return out;
     }
 
+    public SendMessage buildActiveUsersMessage(Long chatId) {
+        List<User> users = subscriptionService.getActiveUsersWithSubscription();
+        if (users.isEmpty()) {
+            return BotMessageFactory.simpleMessage(chatId, "Активных подписок нет.");
+        }
+        StringBuilder sb = new StringBuilder("👥 Активные пользователи (" + users.size() + "):\n");
+        for (User u : users) {
+            String uname = u.getUsername();
+            if (uname != null && !uname.isBlank()) {
+                if (!uname.startsWith("@")) {
+                    uname = "@" + uname;
+                }
+                sb.append(uname);
+            } else if (u.getTelegramId() != null) {
+                sb.append("tg_").append(u.getTelegramId());
+            } else {
+                sb.append("user_").append(u.getId());
+            }
+            sb.append("\n");
+        }
+        return BotMessageFactory.simpleMessage(chatId, sb.toString().trim());
+    }
+
     private void handleAddSubscription(Long chatId, String text, List<SendMessage> out) {
         String[] parts = text.split("\\s+");
         if (parts.length < 2) {
@@ -149,7 +172,7 @@ public class AdminFlowService {
         }
         User user = userService.setDisabled(userOpt.get(), true);
         try {
-            vpnKeyService.revokeActiveKey(user);
+            vpnKeyService.revokeAllKeys(user);
         } catch (Exception e) {
             log.warn("Не удалось отозвать ключ для пользователя {}: {}", user.getId(), e.getMessage());
         }

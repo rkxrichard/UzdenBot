@@ -112,6 +112,25 @@ public class VpnKeyService {
         tx.execute(status -> ensureKeyForActiveSubscriptionTx(user.getId()));
     }
 
+    public VpnKey replaceKeyForUser(User user, long keyId) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is required");
+        }
+        ReplaceContext ctx = tx.execute(status -> replaceKeyForUserTx(user.getId(), keyId));
+
+        VpnKey newKey = finalizeIssueOutsideTx(ctx.newKeyId);
+
+        if (ctx.oldInboundId != null && ctx.oldClientUuid != null) {
+            try {
+                xuiClient.disableClient(ctx.oldInboundId, ctx.oldClientUuid);
+            } catch (Exception e) {
+                log.error("Не удалось выключить старый ключ клиента: inbound:{}, uuid:{}", ctx.oldInboundId, ctx.oldClientUuid, e);
+            }
+        }
+
+        return newKey;
+    }
+
     public VpnKey getKeyForUser(User user, long keyId) {
         VpnKey key = findKeyForUser(user, keyId);
         if (!subscriptionService.hasActiveSubscriptionForKey(key)) {
@@ -185,6 +204,31 @@ public class VpnKeyService {
             log.error("Не удалось выключить ключ клиента: inbound:{}, uuid:{}", key.getInboundId(), key.getClientUuid());
             tx.execute(s -> markErrorTx(key.getId(), "disable failed: " + safeMsg(e)));
         }
+    }
+
+    public int revokeAllKeys(User user) {
+        if (user == null || user.getId() == null) return 0;
+        List<VpnKey> keys = vpnKeyRepository.findUserKeys(user.getId());
+        if (keys.isEmpty()) return 0;
+        for (VpnKey key : keys) {
+            tx.execute(status -> {
+                VpnKey fresh = vpnKeyRepository.findById(key.getId()).orElse(null);
+                if (fresh == null) return null;
+                if (fresh.getStatus() == VpnKey.Status.REVOKED || fresh.isRevoked()) return null;
+                fresh.markRevoked();
+                fresh.setLastError(null);
+                vpnKeyRepository.save(fresh);
+                return null;
+            });
+            try {
+                if (key.getInboundId() != null && key.getClientUuid() != null) {
+                    xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                }
+            } catch (Exception e) {
+                log.warn("Не удалось выключить ключ клиента keyId={}: {}", key.getId(), safeMsg(e));
+            }
+        }
+        return keys.size();
     }
 
 
@@ -268,6 +312,34 @@ public class VpnKeyService {
             return null;
         });
         return ids.size();
+    }
+
+    public int purgeDisabledUsers() {
+        List<User> disabled = userRepository.findByDisabledTrue();
+        if (disabled.isEmpty()) {
+            return 0;
+        }
+        for (User user : disabled) {
+            try {
+                List<VpnKey> keys = vpnKeyRepository.findUserKeys(user.getId());
+                for (VpnKey key : keys) {
+                    try {
+                        if (key.getInboundId() != null && key.getClientUuid() != null) {
+                            xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                        }
+                    } catch (Exception e) {
+                        log.warn("Не удалось выключить ключ клиента keyId={}: {}", key.getId(), safeMsg(e));
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Ошибка при обработке отключенного пользователя userId={}: {}", user.getId(), safeMsg(e));
+            }
+        }
+        tx.execute(status -> {
+            userRepository.deleteAllInBatch(disabled);
+            return null;
+        });
+        return disabled.size();
     }
 
 
@@ -357,6 +429,43 @@ public class VpnKeyService {
                 pending.getId(),
                 old == null ? null : old.getInboundId(),
                 old == null ? null : old.getClientUuid()
+        );
+    }
+
+    private ReplaceContext replaceKeyForUserTx(Long userId, long keyId) {
+        userRepository.lockUser(userId);
+
+        VpnKey old = vpnKeyRepository.findByIdAndUserId(keyId, userId).orElse(null);
+        if (old == null) {
+            throw new IllegalStateException("Ключ не найден");
+        }
+        if (old.getStatus() == VpnKey.Status.REVOKED || old.isRevoked()) {
+            throw new IllegalStateException("Ключ отозван");
+        }
+        if (!subscriptionService.hasActiveSubscriptionForKey(old)) {
+            throw new IllegalStateException("Нет активной подписки для этого ключа");
+        }
+
+        old.markRevoked();
+        old.setLastError(null);
+        vpnKeyRepository.save(old);
+        vpnKeyRepository.flush();
+
+        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId));
+
+        Subscription activeSub = subscriptionRepository
+                .findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(old, java.time.LocalDateTime.now())
+                .orElse(null);
+        if (activeSub == null) {
+            throw new IllegalStateException("Нет активной подписки для этого ключа");
+        }
+        activeSub.setVpnKey(pending);
+        subscriptionRepository.save(activeSub);
+
+        return new ReplaceContext(
+                pending.getId(),
+                old.getInboundId(),
+                old.getClientUuid()
         );
     }
 

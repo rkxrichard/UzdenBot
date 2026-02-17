@@ -155,4 +155,24 @@ public class SubscriptionService {
         return (long) Math.ceil(minutesLeft / 1440.0);
     }
 
+    @Transactional(readOnly = true)
+    public List<User> getActiveUsersWithSubscription() {
+        List<Subscription> active = subscriptionRepository.findByEndDateAfter(LocalDateTime.now());
+        if (active.isEmpty()) {
+            return List.of();
+        }
+        java.util.LinkedHashMap<Long, User> map = new java.util.LinkedHashMap<>();
+        for (Subscription sub : active) {
+            User user = sub.getUser();
+            if (user == null || user.isDisabled() || user.getTelegramId() == null) {
+                continue;
+            }
+            Long id = user.getId();
+            if (id != null) {
+                map.putIfAbsent(id, user);
+            }
+        }
+        return new java.util.ArrayList<>(map.values());
+    }
+
 }
