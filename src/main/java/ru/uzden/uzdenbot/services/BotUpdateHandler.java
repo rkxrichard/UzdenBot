@@ -245,6 +245,13 @@ public class BotUpdateHandler {
                             "Отправьте @username, чтобы включить пользователя.\n\n/cancel — отмена."));
                 }
             }
+            case "ADMIN_BROADCAST" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.BROADCAST);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "Отправьте текст рассылки. Сообщение будет отправлено всем пользователям.\n\n/cancel — отмена."));
+                }
+            }
             case "ADMIN_PURGE_DISABLED_KEYS" -> {
                 if (isAdmin) {
                     InlineKeyboardButton bYes = InlineKeyboardButton.builder()

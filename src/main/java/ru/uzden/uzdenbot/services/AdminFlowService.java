@@ -32,6 +32,7 @@ public class AdminFlowService {
             case REVOKE_SUBSCRIPTION -> handleRevokeSubscription(chatId, trimmed, out);
             case DISABLE_USER -> handleDisableUser(chatId, trimmed, out);
             case ENABLE_USER -> handleEnableUser(chatId, trimmed, out);
+            case BROADCAST -> handleBroadcast(chatId, text, out);
             default -> {
             }
         }
@@ -194,6 +195,34 @@ public class AdminFlowService {
         userService.setDisabled(userOpt.get(), false);
         adminStateService.clear(chatId);
         out.add(BotMessageFactory.simpleMessage(chatId, "✅ Пользователь включён."));
+    }
+
+    private void handleBroadcast(Long chatId, String text, List<SendMessage> out) {
+        String message = text == null ? "" : text.trim();
+        if (message.isBlank()) {
+            out.add(BotMessageFactory.simpleMessage(chatId,
+                    "Текст рассылки пуст. Отправьте сообщение текстом.\n\n/cancel — отмена."));
+            return;
+        }
+
+        List<User> users = userService.listAll();
+        if (users.isEmpty()) {
+            adminStateService.clear(chatId);
+            out.add(BotMessageFactory.simpleMessage(chatId, "Пользователей нет. Рассылка не отправлена."));
+            return;
+        }
+
+        int delivered = 0;
+        for (User u : users) {
+            Long telegramId = u.getTelegramId();
+            if (telegramId == null) continue;
+            out.add(BotMessageFactory.simpleMessage(telegramId, message));
+            delivered++;
+        }
+
+        adminStateService.clear(chatId);
+        out.add(0, BotMessageFactory.simpleMessage(chatId,
+                "📣 Рассылка отправлена: " + delivered + " пользователей."));
     }
 
     private Optional<User> findUserByIdentifier(String identifier) {

@@ -112,6 +112,10 @@ public class BotMenuService {
                 .text("👥 Активные пользователи")
                 .callbackData("ADMIN_ACTIVE_USERS")
                 .build();
+        InlineKeyboardButton bBroadcast = InlineKeyboardButton.builder()
+                .text("📣 Рассылка")
+                .callbackData("ADMIN_BROADCAST")
+                .build();
         InlineKeyboardButton bRevokeSub = InlineKeyboardButton.builder()
                 .text("🛑 Отключить подписку")
                 .callbackData("ADMIN_REVOKE_SUB")
@@ -138,6 +142,7 @@ public class BotMenuService {
                         List.of(bAddSub),
                         List.of(bCheckSub),
                         List.of(bActiveUsers),
+                        List.of(bBroadcast),
                         List.of(bRevokeSub),
                         List.of(bDisableUser),
                         List.of(bEnableUser),

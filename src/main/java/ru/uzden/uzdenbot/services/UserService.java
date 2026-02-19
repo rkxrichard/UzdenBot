@@ -8,6 +8,7 @@ import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -56,5 +57,10 @@ public class UserService {
     public User setDisabled(User user, boolean disabled) {
         user.setDisabled(disabled);
         return userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public List<User> listAll() {
+        return userRepository.findAll();
     }
 }

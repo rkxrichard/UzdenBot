@@ -5,5 +5,6 @@ public enum AdminAction {
     CHECK_SUBSCRIPTION,
     REVOKE_SUBSCRIPTION,
     DISABLE_USER,
-    ENABLE_USER
+    ENABLE_USER,
+    BROADCAST
 }
