@@ -473,6 +473,7 @@ public class VpnKeyService {
         VpnKey pending = new VpnKey();
         User userRef = userRepository.getReferenceById(userId);
         pending.setUser(userRef);
+        pending.setInboundId(inbound);
 
         UUID clientUuid = UUID.randomUUID();
         pending.setClientUuid(clientUuid);
