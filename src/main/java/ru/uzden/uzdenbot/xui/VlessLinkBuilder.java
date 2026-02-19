@@ -16,9 +16,16 @@ import java.nio.charset.StandardCharsets;
 public class VlessLinkBuilder {
 
     private final String fallbackPublicKey;
+    private final String fallbackSni;
+    private final String fallbackTarget;
 
-    public VlessLinkBuilder(@Value("${xui.reality-public-key:}") String fallbackPublicKey) {
+    public VlessLinkBuilder(
+            @Value("${xui.reality-public-key:}") String fallbackPublicKey,
+            @Value("${xui.reality-sni:}") String fallbackSni,
+            @Value("${xui.reality-target:}") String fallbackTarget) {
         this.fallbackPublicKey = fallbackPublicKey;
+        this.fallbackSni = fallbackSni;
+        this.fallbackTarget = fallbackTarget;
     }
 
     public String buildRealityLink(
@@ -70,7 +77,9 @@ public class VlessLinkBuilder {
                     firstArrayItem(realitySettings, "serverNames"),
                     stringField(realitySettings, "serverName"),
                     hostFromTarget(stringField(realitySettings, "dest")),
-                    hostFromTarget(stringField(realitySettings, "target"))
+                    hostFromTarget(stringField(realitySettings, "target")),
+                    fallbackSni,
+                    hostFromTarget(fallbackTarget)
             );
 
             if (sni == null || sni.isBlank()) {
