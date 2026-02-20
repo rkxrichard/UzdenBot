@@ -17,6 +17,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     Optional<User> findUserByUsernameIgnoreCase(String username);
 
+    Optional<User> findByReferralCodeIgnoreCase(String referralCode);
+
     List<User> findByDisabledTrue();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

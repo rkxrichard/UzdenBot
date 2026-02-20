@@ -30,6 +30,15 @@ public class User {
     @Column(name = "is_disabled", nullable = false)
     private boolean disabled = false;
 
+    @Column(name = "referral_code", unique = true)
+    private String referralCode;
+
+    @Column(name = "referred_by")
+    private Long referredBy;
+
+    @Column(name = "referred_at")
+    private LocalDateTime referredAt;
+
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<Subscription> subscriptions = new ArrayList<>();
 }

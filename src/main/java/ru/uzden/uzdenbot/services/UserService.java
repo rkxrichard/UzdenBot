@@ -27,12 +27,14 @@ public class UserService {
                     if (username != null && !username.equals(u.getUsername())) {
                         u.setUsername(username);
                     }
+                    ensureReferralCode(u, telegramId);
                     return u;
                 }).orElseGet(() -> {
                     User u = new User();
                     u.setTelegramId(telegramId);
                     u.setUsername(username);
                     u.setCreatedAt(LocalDateTime.now());
+                    u.setReferralCode(generateReferralCode(telegramId));
                     try {
                         return userRepository.save(u);
                     } catch (DataIntegrityViolationException e) {
@@ -62,5 +64,17 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<User> listAll() {
         return userRepository.findAll();
+    }
+
+    private void ensureReferralCode(User user, Long telegramId) {
+        if (user == null) return;
+        if (user.getReferralCode() == null || user.getReferralCode().isBlank()) {
+            user.setReferralCode(generateReferralCode(telegramId));
+        }
+    }
+
+    private String generateReferralCode(Long telegramId) {
+        if (telegramId == null) return null;
+        return telegramId.toString();
     }
 }

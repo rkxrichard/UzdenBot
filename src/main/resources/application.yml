@@ -49,6 +49,9 @@ app:
       days: 60
       price: 249
       label: "2 месяца"
+  referral:
+    referrer-days: 7
+    referred-days: 3
 
 telegram:
   bot:
@@ -86,7 +89,8 @@ xui:
   inbound-id: 2
   public-host: 46.226.164.227
   public-port: 8443
-  link-tag: inbound-8443
+  link-tag: "🇩🇪 Германия"
+  link-group: REDCastle
   reality-sni: web.max.ru
   reality-target: web.max.ru:443
   # base-url: ${XUI_BASE_URL}

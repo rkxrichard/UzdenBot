@@ -35,9 +35,12 @@ public class BotUpdateHandler {
     private final IdempotencyService idempotencyService;
     private final PaymentService paymentService;
     private final SubscriptionPlansProperties subscriptionPlansProperties;
+    private final ReferralService referralService;
 
     @Value("${app.idempotency.ttl-seconds:10}")
     private long idempotencyTtlSeconds;
+    @Value("${telegram.bot.username}")
+    private String botUsername;
 
     public List<BotApiMethod<?>> handle(Update update) {
         if (update == null) return List.of();
@@ -58,6 +61,9 @@ public class BotUpdateHandler {
         boolean isAdmin = adminService.isAdmin(from.getId());
 
         User user = userService.registerOrUpdate(from);
+        if (text != null && text.startsWith("/start")) {
+            handleReferralOnStart(out, chatId, user, text, isAdmin);
+        }
 
         if (isAdmin) {
             if ("/admin".equalsIgnoreCase(text.trim())) {
@@ -167,6 +173,8 @@ public class BotUpdateHandler {
                     botMenuService.myKeysMenu(chatId, user), chatId, messageId));
             case "MENU_HELP" -> out.add(BotMessageFactory.editFromSendMessage(
                     botMenuService.instructionsMenu(chatId), chatId, messageId));
+            case "MENU_REFERRAL" -> out.add(BotMessageFactory.editFromSendMessage(
+                    botMenuService.referralMenu(chatId, user, botUsername), chatId, messageId));
             case "MENU_BACK" -> {
                 adminStateService.clear(chatId);
                 out.add(BotMessageFactory.editFromSendMessage(
@@ -296,6 +304,40 @@ public class BotUpdateHandler {
             out.add(BotMessageFactory.callbackAnswer(callbackId, null));
         }
         return out;
+    }
+
+    private void handleReferralOnStart(List<BotApiMethod<?>> out, Long chatId, User user, String text, boolean isAdmin) {
+        if (text == null) return;
+        if (user != null && user.isDisabled() && !isAdmin) return;
+        String code = extractStartCode(text);
+        if (code == null) return;
+        ReferralService.ReferralResult result = referralService.applyReferral(user, code);
+        switch (result.status) {
+            case APPLIED -> {
+                out.add(BotMessageFactory.simpleMessage(chatId,
+                        "✅ После перехода по ссылке вам добавилось " + result.referredDays + " дн."));
+                Long refTg = result.referrerTelegramId;
+                if (refTg != null) {
+                    out.add(BotMessageFactory.simpleMessage(refTg,
+                            "🎉 Ваш реферал активировался! Вам начислено " + result.referrerDays + " дн."));
+                }
+            }
+            case SELF_REF -> out.add(BotMessageFactory.simpleMessage(chatId, "Нельзя использовать свою реферальную ссылку."));
+            case ALREADY_REFERRED -> out.add(BotMessageFactory.simpleMessage(chatId, "Реферал уже был активирован ранее."));
+            case INVALID_CODE -> out.add(BotMessageFactory.simpleMessage(chatId, "Реферальный код не найден."));
+            case NO_CODE -> {
+            }
+        }
+    }
+
+    private String extractStartCode(String text) {
+        String t = text.trim();
+        if (t.equalsIgnoreCase("/start")) return null;
+        if (!t.startsWith("/start")) return null;
+        String[] parts = t.split("\\s+", 2);
+        if (parts.length < 2) return null;
+        String payload = parts[1].trim();
+        return payload.isBlank() ? null : payload;
     }
 
     private boolean handleKeyGet(List<BotApiMethod<?>> out, Long chatId, String callbackId, User user, Long keyId) {

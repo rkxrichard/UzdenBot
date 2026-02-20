@@ -35,6 +35,7 @@ class BotUpdateHandlerTest {
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
         SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
+        ReferralService referralService = mock(ReferralService.class);
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -45,7 +46,8 @@ class BotUpdateHandlerTest {
                 vpnKeyService,
                 idempotencyService,
                 paymentService,
-                plans
+                plans,
+                referralService
         );
         setIdempotencyTtl(handler, 10L);
 
@@ -80,6 +82,7 @@ class BotUpdateHandlerTest {
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
         SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
+        ReferralService referralService = mock(ReferralService.class);
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -90,7 +93,8 @@ class BotUpdateHandlerTest {
                 vpnKeyService,
                 idempotencyService,
                 paymentService,
-                plans
+                plans,
+                referralService
         );
         setIdempotencyTtl(handler, 10L);
 
@@ -119,6 +123,7 @@ class BotUpdateHandlerTest {
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
         SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
+        ReferralService referralService = mock(ReferralService.class);
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -129,7 +134,8 @@ class BotUpdateHandlerTest {
                 vpnKeyService,
                 idempotencyService,
                 paymentService,
-                plans
+                plans,
+                referralService
         );
         setIdempotencyTtl(handler, 10L);
 
@@ -163,6 +169,7 @@ class BotUpdateHandlerTest {
         IdempotencyService idempotencyService = mock(IdempotencyService.class);
         PaymentService paymentService = mock(PaymentService.class);
         SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
+        ReferralService referralService = mock(ReferralService.class);
 
         BotUpdateHandler handler = new BotUpdateHandler(
                 botMenuService,
@@ -173,7 +180,8 @@ class BotUpdateHandlerTest {
                 vpnKeyService,
                 idempotencyService,
                 paymentService,
-                plans
+                plans,
+                referralService
         );
         setIdempotencyTtl(handler, 10L);
 

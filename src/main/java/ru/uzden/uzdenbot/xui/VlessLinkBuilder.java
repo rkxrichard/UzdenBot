@@ -18,14 +18,17 @@ public class VlessLinkBuilder {
     private final String fallbackPublicKey;
     private final String fallbackSni;
     private final String fallbackTarget;
+    private final String linkGroup;
 
     public VlessLinkBuilder(
             @Value("${xui.reality-public-key:}") String fallbackPublicKey,
             @Value("${xui.reality-sni:}") String fallbackSni,
-            @Value("${xui.reality-target:}") String fallbackTarget) {
+            @Value("${xui.reality-target:}") String fallbackTarget,
+            @Value("${xui.link-group:}") String linkGroup) {
         this.fallbackPublicKey = fallbackPublicKey;
         this.fallbackSni = fallbackSni;
         this.fallbackTarget = fallbackTarget;
+        this.linkGroup = linkGroup;
     }
 
     public String buildRealityLink(
@@ -130,6 +133,9 @@ public class VlessLinkBuilder {
             qs.append("&sid=").append(url(sid));
             qs.append("&spx=").append(url(spx));
             qs.append("&flow=").append(url(flow));
+            if (linkGroup != null && !linkGroup.isBlank()) {
+                qs.append("&group=").append(url(linkGroup));
+            }
 
             String tag = (linkTag == null || linkTag.isBlank()) ? "vpn" : linkTag;
             return "vless://" + clientUuid + "@" + publicHost + ":" + publicPort + "?" + qs + "#" + urlFragment(tag);

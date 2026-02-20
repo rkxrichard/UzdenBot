@@ -37,6 +37,7 @@ public class VpnKeyService {
     private final String publicHost;
     private final int publicPort;
     private final String linkTag;
+    private final String linkGroup;
 
     private static final int MAX_KEYS_PER_USER = 3;
 
@@ -52,7 +53,8 @@ public class VpnKeyService {
             @Value("${xui.inbound-id:1}") Long inbound,
             @Value("${xui.public-host:80.66.84.34}") String publicHost,
             @Value("${xui.public-port:443}") int publicPort,
-            @Value("${xui.link-tag:reality443-auto}") String linkTag) {
+            @Value("${xui.link-tag:reality443-auto}") String linkTag,
+            @Value("${xui.link-group:}") String linkGroup) {
         this.vpnKeyRepository = vpnKeyRepository;
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
@@ -64,6 +66,7 @@ public class VpnKeyService {
         this.publicHost = publicHost;
         this.publicPort = publicPort;
         this.linkTag = linkTag;
+        this.linkGroup = linkGroup;
     }
 
     public int getMaxKeysPerUser() {
@@ -667,7 +670,11 @@ public class VpnKeyService {
         String v = key.getKeyValue();
         if (v == null || v.isBlank()) return false;
         if (!v.startsWith("vless://")) return false;
-        return v.contains("encryption=none") || !v.contains("encryption=");
+        if (v.contains("encryption=none") || !v.contains("encryption=")) return true;
+        String expectedTag = encodeFragment((linkTag == null || linkTag.isBlank()) ? "vpn" : linkTag);
+        String currentTag = extractFragment(v);
+        if (currentTag == null || !currentTag.equals(expectedTag)) return true;
+        return !hasExpectedGroup(v);
     }
 
     private VpnKey refreshActiveLink(VpnKey key) {
@@ -687,5 +694,31 @@ public class VpnKeyService {
             log.warn("Не удалось обновить ссылку ACTIVE keyId={}: {}", key.getId(), safeMsg(e));
         }
         return key;
+    }
+
+    private String extractFragment(String url) {
+        int idx = url.indexOf('#');
+        if (idx < 0 || idx + 1 >= url.length()) return null;
+        return url.substring(idx + 1);
+    }
+
+    private boolean hasExpectedGroup(String url) {
+        if (linkGroup == null || linkGroup.isBlank()) return true;
+        String expected = "group=" + encodeQuery(linkGroup);
+        return url.contains(expected);
+    }
+
+    private String encodeQuery(String s) {
+        if (s == null) return "";
+        try {
+            return java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+        } catch (Exception e) {
+            return s;
+        }
+    }
+
+    private String encodeFragment(String s) {
+        return encodeQuery(s);
     }
 }

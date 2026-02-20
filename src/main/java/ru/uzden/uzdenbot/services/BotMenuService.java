@@ -64,6 +64,10 @@ public class BotMenuService {
                 .text("📘 Инструкция")
                 .callbackData("MENU_HELP")
                 .build();
+        InlineKeyboardButton bReferral = InlineKeyboardButton.builder()
+                .text("🎁 Пригласить друга")
+                .callbackData("MENU_REFERRAL")
+                .build();
         InlineKeyboardButton bSupport = InlineKeyboardButton.builder()
                 .text("💬 Техподдержка")
                 .url(buildSupportUrl())
@@ -75,6 +79,7 @@ public class BotMenuService {
             rows.add(List.of(bKeys));
         }
         rows.add(List.of(bHelp));
+        rows.add(List.of(bReferral));
         rows.add(List.of(bSupport));
         if (isAdmin) {
             rows.add(List.of(bAdmin));
@@ -171,6 +176,35 @@ public class BotMenuService {
         return SendMessage.builder()
                 .chatId(chatId.toString())
                 .text(instructionsText)
+                .replyMarkup(keyboardMarkup)
+                .build();
+    }
+
+    public SendMessage referralMenu(Long chatId, User user, String botUsername) {
+        String code = (user == null) ? null : user.getReferralCode();
+        if (code == null || code.isBlank()) {
+            code = "";
+        }
+        String bot = botUsername == null ? "" : botUsername.trim();
+        String link = "https://t.me/" + bot + "?start=ref_" + code;
+        String text = "🎁 Приглашайте друзей и получайте бонусы!\n\n" +
+                "• Вам: +7 дней за каждого приглашённого\n" +
+                "• Другу: +3 дня после старта по ссылке\n\n" +
+                "Ваша ссылка:\n" + link + "\n\n" +
+                "Или используйте код: " + code;
+
+        InlineKeyboardButton bBack = InlineKeyboardButton.builder()
+                .text("⬅️ Назад")
+                .callbackData("MENU_BACK")
+                .build();
+
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(List.of(bBack)))
+                .build();
+
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(text)
                 .replyMarkup(keyboardMarkup)
                 .build();
     }
@@ -671,6 +705,4 @@ public class BotMenuService {
                 .resizeKeyboard(true)
                 .build();
     }
-
- 
 }
