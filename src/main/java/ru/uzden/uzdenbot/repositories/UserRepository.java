@@ -19,6 +19,8 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     Optional<User> findByReferralCodeIgnoreCase(String referralCode);
 
+    long countByReferredBy(Long referredBy);
+
     List<User> findByDisabledTrue();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

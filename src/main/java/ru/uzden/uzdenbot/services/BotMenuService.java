@@ -185,12 +185,16 @@ public class BotMenuService {
         if (code == null || code.isBlank()) {
             code = "";
         }
+        long invited = (user == null || user.getId() == null)
+                ? 0
+                : userRepository.countByReferredBy(user.getId());
         String bot = botUsername == null ? "" : botUsername.trim();
         String link = "https://t.me/" + bot + "?start=ref_" + code;
         String text = "🎁 Рефералы\n" +
                 "━━━━━━━━━━━━\n" +
                 "✅ Вам: +7 дней\n" +
                 "✅ Другу: +3 дня\n\n" +
+                "👥 Приглашено: " + invited + "\n\n" +
                 "🔗 Ссылка:\n" + link + "\n" +
                 "🔑 Код: " + code;
 
