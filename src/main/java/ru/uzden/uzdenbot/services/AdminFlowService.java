@@ -57,9 +57,30 @@ public class AdminFlowService {
             } else {
                 sb.append("user_").append(u.getId());
             }
+            long daysLeft = subscriptionService.getActiveSubscription(u)
+                    .map(subscriptionService::getDaysLeft)
+                    .orElse(0L);
+            sb.append(" — ").append(formatDaysLeft(daysLeft));
             sb.append("\n");
         }
         return BotMessageFactory.simpleMessage(chatId, sb.toString().trim());
+    }
+
+    private String formatDaysLeft(long daysLeft) {
+        long abs = Math.abs(daysLeft);
+        long mod100 = abs % 100;
+        long mod10 = abs % 10;
+        String word;
+        if (mod100 >= 11 && mod100 <= 14) {
+            word = "дней";
+        } else if (mod10 == 1) {
+            word = "день";
+        } else if (mod10 >= 2 && mod10 <= 4) {
+            word = "дня";
+        } else {
+            word = "дней";
+        }
+        return daysLeft + " " + word;
     }
 
     private void handleAddSubscription(Long chatId, String text, List<SendMessage> out) {
