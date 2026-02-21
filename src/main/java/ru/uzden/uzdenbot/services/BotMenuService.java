@@ -49,27 +49,27 @@ public class BotMenuService {
         boolean hasAnySubscription = user != null && subscriptionService.getLastSubscription(user).isPresent();
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text("Подписка и тарифы")
+                .text("📦 Подписка и тарифы")
                 .callbackData("MENU_SUBSCRIPTION")
                 .build();
         InlineKeyboardButton bKeys = InlineKeyboardButton.builder()
-                .text("Мои ключи")
+                .text("🔑 Мои ключи")
                 .callbackData("MENU_KEYS")
                 .build();
         InlineKeyboardButton bAdmin = InlineKeyboardButton.builder()
-                .text("Админ‑панель")
+                .text("🛠 Админ‑панель")
                 .callbackData("MENU_ADMIN")
                 .build();
         InlineKeyboardButton bHelp = InlineKeyboardButton.builder()
-                .text("Инструкция")
+                .text("📘 Инструкция")
                 .callbackData("MENU_HELP")
                 .build();
         InlineKeyboardButton bReferral = InlineKeyboardButton.builder()
-                .text("Пригласить друга")
+                .text("🎁 Пригласить друга")
                 .callbackData("MENU_REFERRAL")
                 .build();
         InlineKeyboardButton bSupport = InlineKeyboardButton.builder()
-                .text("Техподдержка")
+                .text("💬 Техподдержка")
                 .url(buildSupportUrl())
                 .build();
 
@@ -106,39 +106,39 @@ public class BotMenuService {
 
     public SendMessage adminMenu(Long chatId) {
         InlineKeyboardButton bAddSub = InlineKeyboardButton.builder()
-                .text("Выдать подписку")
+                .text("➕ Выдать подписку")
                 .callbackData("ADMIN_ADD_SUB")
                 .build();
         InlineKeyboardButton bCheckSub = InlineKeyboardButton.builder()
-                .text("Проверить подписку")
+                .text("🔎 Проверить подписку")
                 .callbackData("ADMIN_CHECK_SUB")
                 .build();
         InlineKeyboardButton bActiveUsers = InlineKeyboardButton.builder()
-                .text("Активные пользователи")
+                .text("👥 Активные пользователи")
                 .callbackData("ADMIN_ACTIVE_USERS")
                 .build();
         InlineKeyboardButton bBroadcast = InlineKeyboardButton.builder()
-                .text("Рассылка")
+                .text("📣 Рассылка")
                 .callbackData("ADMIN_BROADCAST")
                 .build();
         InlineKeyboardButton bRevokeSub = InlineKeyboardButton.builder()
-                .text("Отключить подписку")
+                .text("🛑 Отключить подписку")
                 .callbackData("ADMIN_REVOKE_SUB")
                 .build();
         InlineKeyboardButton bDisableUser = InlineKeyboardButton.builder()
-                .text("Заблокировать пользователя")
+                .text("🚫 Заблокировать пользователя")
                 .callbackData("ADMIN_DISABLE_USER")
                 .build();
         InlineKeyboardButton bEnableUser = InlineKeyboardButton.builder()
-                .text("Разблокировать пользователя")
+                .text("✅ Разблокировать пользователя")
                 .callbackData("ADMIN_ENABLE_USER")
                 .build();
         InlineKeyboardButton bPurgeDisabled = InlineKeyboardButton.builder()
-                .text("Удалить отключённых клиентов")
+                .text("🧹 Удалить отключённых клиентов")
                 .callbackData("ADMIN_PURGE_DISABLED_KEYS")
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
@@ -158,14 +158,14 @@ public class BotMenuService {
 
         return SendMessage.builder()
                 .chatId(chatId.toString())
-                .text("Админ-меню")
+                .text("🛠 Админ-меню")
                 .replyMarkup(keyboardMarkup)
                 .build();
     }
 
     public SendMessage instructionsMenu(Long chatId) {
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
@@ -187,15 +187,15 @@ public class BotMenuService {
         }
         String bot = botUsername == null ? "" : botUsername.trim();
         String link = "https://t.me/" + bot + "?start=ref_" + code;
-        String text = "REDCastle · Рефералы\n" +
+        String text = "🎁 Рефералы\n" +
                 "━━━━━━━━━━━━\n" +
-                "+7 дней вам\n" +
-                "+3 дня другу\n\n" +
-                "Ссылка:\n" + link + "\n" +
-                "Код: " + code;
+                "✅ Вам: +7 дней\n" +
+                "✅ Другу: +3 дня\n\n" +
+                "🔗 Ссылка:\n" + link + "\n" +
+                "🔑 Код: " + code;
 
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
@@ -232,7 +232,7 @@ public class BotMenuService {
         String menuText = buildSubscriptionMenuText(activeSubOpt, lastSubOpt);
 
         InlineKeyboardButton bMyKeys = InlineKeyboardButton.builder()
-                .text("Мои ключи")
+                .text("🔑 Мои ключи")
                 .callbackData("MENU_KEYS")
                 .build();
 
@@ -242,7 +242,7 @@ public class BotMenuService {
 //                .build();
 
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
 
@@ -293,22 +293,22 @@ public class BotMenuService {
         String label2 = normalizeLabel(p2.getLabel(), "2 месяца");
 
         String text = baseText + "\n\n" +
-                "Тарифы\n" +
+                "💳 Тарифы\n" +
                 "━━━━━━━━━━━━\n" +
-                label1 + " — " + price1 + "₽\n" +
-                label2 + " — " + price2 + "₽ (−" + discountPercent(baseMonthlyPrice, price2, p2.getMonths()) + "%)\n" +
-                "\nВыберите срок";
+                "• " + label1 + " — " + price1 + "₽\n" +
+                "• " + label2 + " — " + price2 + "₽ (−" + discountPercent(baseMonthlyPrice, price2, p2.getMonths()) + "%)\n" +
+                "\nВыберите срок ниже 👇";
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text(label1 + " — " + price1 + "₽")
+                .text("💳 " + label1 + " — " + price1 + "₽")
                 .callbackData("BUY_1M")
                 .build();
         InlineKeyboardButton b2 = InlineKeyboardButton.builder()
-                .text(label2 + " — " + price2 + "₽ (−" + discountPercent(baseMonthlyPrice, price2, p2.getMonths()) + "%)")
+                .text("🔥 " + label2 + " — " + price2 + "₽ (−" + discountPercent(baseMonthlyPrice, price2, p2.getMonths()) + "%)")
                 .callbackData("BUY_2M")
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_SUBSCRIPTION")
                 .build();
 
@@ -345,7 +345,7 @@ public class BotMenuService {
                 keyInfo = "\n" + label + " • " + daysInfo;
             } catch (Exception e) {
                 InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                        .text("Назад")
+                        .text("⬅️ Назад")
                         .callbackData("MENU_KEYS")
                         .build();
                 InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
@@ -360,22 +360,22 @@ public class BotMenuService {
         }
 
         String text = title + keyInfo + "\n\n" +
-                "Тарифы\n" +
+                "💳 Тарифы\n" +
                 "━━━━━━━━━━━━\n" +
-                label1 + " — " + p1.getPrice() + "₽\n" +
-                label2 + " — " + p2.getPrice() + "₽ (−" + discountPercent(baseMonthlyPrice, p2.getPrice(), p2.getMonths()) + "%)\n" +
-                "\nВыберите срок";
+                "• " + label1 + " — " + p1.getPrice() + "₽\n" +
+                "• " + label2 + " — " + p2.getPrice() + "₽ (−" + discountPercent(baseMonthlyPrice, p2.getPrice(), p2.getMonths()) + "%)\n" +
+                "\nВыберите срок ниже 👇";
 
         InlineKeyboardButton b1 = InlineKeyboardButton.builder()
-                .text(label1 + " — " + p1.getPrice() + "₽")
+                .text("💳 " + label1 + " — " + p1.getPrice() + "₽")
                 .callbackData(isNewKey ? "KEY_NEW_BUY_1M" : "KEY_RENEW_1M:" + keyId)
                 .build();
         InlineKeyboardButton b2 = InlineKeyboardButton.builder()
-                .text(label2 + " — " + p2.getPrice() + "₽ (−" + discountPercent(baseMonthlyPrice, p2.getPrice(), p2.getMonths()) + "%)")
+                .text("🔥 " + label2 + " — " + p2.getPrice() + "₽ (−" + discountPercent(baseMonthlyPrice, p2.getPrice(), p2.getMonths()) + "%)")
                 .callbackData(isNewKey ? "KEY_NEW_BUY_2M" : "KEY_RENEW_2M:" + keyId)
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_KEYS")
                 .build();
 
@@ -399,9 +399,9 @@ public class BotMenuService {
         List<VpnKey> keys = vpnKeyService.listUserKeys(user);
         int maxKeys = vpnKeyService.getMaxKeysPerUser();
 
-        StringBuilder text = new StringBuilder("REDCastle · Ключи\n━━━━━━━━━━━━\n");
+        StringBuilder text = new StringBuilder("🔑 Мои ключи\n━━━━━━━━━━━━\n");
         if (keys.isEmpty()) {
-            text.append("Ключей нет");
+            text.append("У вас пока нет ключей");
         } else {
             for (int i = 0; i < keys.size(); i++) {
                 VpnKey key = keys.get(i);
@@ -421,7 +421,7 @@ public class BotMenuService {
         for (int i = 0; i < keys.size(); i++) {
             VpnKey key = keys.get(i);
             InlineKeyboardButton b = InlineKeyboardButton.builder()
-                    .text("Ключ " + (i + 1))
+                    .text("🔑 Ключ " + (i + 1))
                     .callbackData("KEY_SELECT:" + key.getId())
                     .build();
             rows.add(List.of(b));
@@ -429,14 +429,14 @@ public class BotMenuService {
 
         if (keys.size() < maxKeys) {
             InlineKeyboardButton bNew = InlineKeyboardButton.builder()
-                    .text("Новый ключ")
+                    .text("➕ Новый ключ")
                     .callbackData("KEY_NEW")
                     .build();
             rows.add(List.of(bNew));
         }
 
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_BACK")
                 .build();
         rows.add(List.of(bBack));
@@ -467,7 +467,7 @@ public class BotMenuService {
         }
         if (target == null) {
             InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                    .text("Назад")
+                    .text("⬅️ Назад")
                     .callbackData("MENU_KEYS")
                     .build();
             InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
@@ -482,7 +482,7 @@ public class BotMenuService {
 
         String created = formatInstant(target.getCreatedAt());
         Optional<Subscription> keySubOpt = subscriptionService.getActiveSubscription(target);
-        String text = "REDCastle · Ключ №" + (index + 1) + "\n" +
+        String text = "🔑 Ключ №" + (index + 1) + "\n" +
                 "━━━━━━━━━━━━\n" +
                 "Статус: " + keyStatusLabel(target) + "\n" +
                 "Срок: " + keyDaysLeftText(target) + "\n" +
@@ -490,19 +490,19 @@ public class BotMenuService {
                 (keySubOpt.isPresent() ? "\nУдаление после окончания срока" : "");
 
         InlineKeyboardButton bGet = InlineKeyboardButton.builder()
-                .text("Получить ключ")
+                .text("📋 Получить ключ")
                 .callbackData("KEY_GET:" + target.getId())
                 .build();
         InlineKeyboardButton bReplace = InlineKeyboardButton.builder()
-                .text("Заменить ключ")
+                .text("♻️ Заменить ключ")
                 .callbackData("KEY_REPLACE:" + target.getId())
                 .build();
         InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
-                .text("Продлить")
+                .text("🔁 Продлить")
                 .callbackData("KEY_RENEW:" + target.getId())
                 .build();
         InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("Назад")
+                .text("⬅️ Назад")
                 .callbackData("MENU_KEYS")
                 .build();
 
@@ -512,7 +512,7 @@ public class BotMenuService {
         rows.add(List.of(bRenew));
         if (keySubOpt.isEmpty()) {
             InlineKeyboardButton bDelete = InlineKeyboardButton.builder()
-                    .text("Удалить ключ")
+                    .text("🗑 Удалить ключ")
                     .callbackData("KEY_DELETE:" + target.getId())
                     .build();
             rows.add(List.of(bDelete));
@@ -535,12 +535,12 @@ public class BotMenuService {
             if (lastSubOpt.isPresent() && lastSubOpt.get().getEndDate() != null
                     && lastSubOpt.get().getEndDate().isBefore(LocalDateTime.now())) {
                 String endedAt = lastSubOpt.get().getEndDate().format(DT_FMT);
-                return "REDCastle · Подписка\n" +
+                return "📦 Подписка\n" +
                         "━━━━━━━━━━━━\n" +
                         "Статус: истекла\n" +
                         "До: " + endedAt;
             }
-            return "REDCastle · Подписка\n" +
+            return "📦 Подписка\n" +
                     "━━━━━━━━━━━━\n" +
                     "Статус: нет активной";
         }
@@ -551,7 +551,7 @@ public class BotMenuService {
         // Если хочешь показывать только дату: sub.getEndDate().toLocalDate().format(DATE_FMT)
         String until = sub.getEndDate().format(DT_FMT);
 
-        return "REDCastle · Подписка\n" +
+        return "📦 Подписка\n" +
                 "━━━━━━━━━━━━\n" +
                 "Статус: активна\n" +
                 "Осталось: " + formatDaysLeft(daysLeft) + "\n" +

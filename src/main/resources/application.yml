@@ -60,9 +60,10 @@ telegram:
   admin-ids: "980389038,592239190"
   support-username: ${TELEGRAM_SUPPORT_USERNAME:@your_support}
   main-menu-text: |-
-    REDCastle
+    🏰 REDCastle
     ━━━━━━━━━━━━
-    Выберите раздел
+    Добро пожаловать!
+    Выберите раздел ниже 👇
 
   instructions-text: |-
     📘 Инструкция подключения
