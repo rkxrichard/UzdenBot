@@ -43,5 +43,9 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
            """)
     List<Subscription> findActiveByUser(@Param("user") User user, @Param("now") LocalDateTime now);
 
+    boolean existsByVpnKeyIdAndEndDateAfter(Long vpnKeyId, LocalDateTime now);
+
+    boolean existsByUserIdAndVpnKeyIsNullAndEndDateAfter(Long userId, LocalDateTime now);
+
     List<Subscription> findByEndDateAfter(LocalDateTime now);
 }

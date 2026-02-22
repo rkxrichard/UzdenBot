@@ -15,6 +15,15 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
 
     @Query("""
            select k from VpnKey k
+           join fetch k.user u
+           where k.revoked = false
+             and k.status = ru.uzden.uzdenbot.entities.VpnKey$Status.ACTIVE
+           order by k.createdAt asc
+           """)
+    List<VpnKey> findActiveKeysWithUser();
+
+    @Query("""
+           select k from VpnKey k
            where k.user.id = :userId
              and k.revoked = false
              and k.status in (ru.uzden.uzdenbot.entities.VpnKey$Status.PENDING,
