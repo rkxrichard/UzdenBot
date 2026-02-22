@@ -115,6 +115,11 @@ public class VpnKeyService {
         tx.execute(status -> ensureKeyForActiveSubscriptionTx(user.getId()));
     }
 
+    public void ensureKeyForActiveSubscriptionByUserId(Long userId) {
+        if (userId == null) return;
+        tx.execute(status -> ensureKeyForActiveSubscriptionTx(userId));
+    }
+
     public VpnKey replaceKeyForUser(User user, long keyId) {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("User is required");

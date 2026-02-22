@@ -43,9 +43,12 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
            """)
     List<Subscription> findActiveByUser(@Param("user") User user, @Param("now") LocalDateTime now);
 
-    boolean existsByVpnKeyIdAndEndDateAfter(Long vpnKeyId, LocalDateTime now);
-
-    boolean existsByUserIdAndVpnKeyIsNullAndEndDateAfter(Long userId, LocalDateTime now);
+    @Query("""
+           select distinct s.user.id from Subscription s
+           where s.endDate > :now
+             and s.vpnKey is null
+           """)
+    List<Long> findUsersWithActiveUnassigned(@Param("now") LocalDateTime now);
 
     List<Subscription> findByEndDateAfter(LocalDateTime now);
 }

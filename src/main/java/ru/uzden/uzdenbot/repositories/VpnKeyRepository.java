@@ -15,12 +15,16 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
 
     @Query("""
            select k from VpnKey k
-           join fetch k.user u
            where k.revoked = false
              and k.status = ru.uzden.uzdenbot.entities.VpnKey$Status.ACTIVE
+             and not exists (
+                select 1 from Subscription s
+                where s.vpnKey = k
+                  and s.endDate > :now
+             )
            order by k.createdAt asc
            """)
-    List<VpnKey> findActiveKeysWithUser();
+    List<VpnKey> findActiveKeysWithoutSubscription(@Param("now") java.time.LocalDateTime now);
 
     @Query("""
            select k from VpnKey k
