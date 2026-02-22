@@ -88,7 +88,7 @@ xui:
   inbound-id: 2
   public-host: 46.226.164.227
   public-port: 8443
-  link-tag: "🇩🇪 Германия"
+  link-tag: "Германия"
   link-group: REDCastle
   reality-sni: web.max.ru
   reality-target: web.max.ru:443
