@@ -5,7 +5,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.repositories.UserRepository;
+import ru.uzden.uzdenbot.repositories.VpnKeyRepository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -15,6 +17,7 @@ import java.util.Optional;
 public class ReferralService {
 
     private final UserRepository userRepository;
+    private final VpnKeyRepository vpnKeyRepository;
     private final SubscriptionService subscriptionService;
     private final VpnKeyService vpnKeyService;
 
@@ -81,10 +84,20 @@ public class ReferralService {
         newUser.setReferredAt(LocalDateTime.now());
         userRepository.save(newUser);
 
-        subscriptionService.extendSubscription(newUser, referredDays);
-        subscriptionService.extendSubscription(referrer, referrerDays);
+        extendForUser(newUser, referredDays);
+        extendForUser(referrer, referrerDays);
 
         return ReferralResult.applied(referrer.getTelegramId(), referredDays, referrerDays);
+    }
+
+    private void extendForUser(User user, int days) {
+        if (user == null || user.getId() == null) return;
+        Optional<VpnKey> activeKey = vpnKeyRepository.findActiveKey(user.getId());
+        if (activeKey.isPresent()) {
+            subscriptionService.extendSubscriptionForKey(user, activeKey.get(), days);
+        } else {
+            subscriptionService.extendSubscription(user, days);
+        }
     }
 
     private String normalizeCode(String raw) {

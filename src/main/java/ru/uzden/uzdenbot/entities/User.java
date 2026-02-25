@@ -39,6 +39,9 @@ public class User {
     @Column(name = "referred_at")
     private LocalDateTime referredAt;
 
+    @Column(name = "subscription_token", unique = true)
+    private String subscriptionToken;
+
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
     private List<Subscription> subscriptions = new ArrayList<>();
 }

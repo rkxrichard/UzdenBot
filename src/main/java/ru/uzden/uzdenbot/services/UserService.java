@@ -10,6 +10,7 @@ import ru.uzden.uzdenbot.repositories.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -59,6 +60,32 @@ public class UserService {
     public User setDisabled(User user, boolean disabled) {
         user.setDisabled(disabled);
         return userRepository.save(user);
+    }
+
+    @Transactional
+    public String getOrCreateSubscriptionToken(User user) {
+        if (user == null || user.getId() == null) return null;
+        User dbUser = userRepository.findById(user.getId()).orElse(null);
+        if (dbUser == null) return null;
+        if (dbUser.getSubscriptionToken() != null && !dbUser.getSubscriptionToken().isBlank()) {
+            return dbUser.getSubscriptionToken();
+        }
+        for (int i = 0; i < 5; i++) {
+            String token = UUID.randomUUID().toString().replace("-", "");
+            dbUser.setSubscriptionToken(token);
+            try {
+                userRepository.save(dbUser);
+                return token;
+            } catch (DataIntegrityViolationException e) {
+                User refreshed = userRepository.findById(user.getId()).orElse(null);
+                if (refreshed == null) return null;
+                if (refreshed.getSubscriptionToken() != null && !refreshed.getSubscriptionToken().isBlank()) {
+                    return refreshed.getSubscriptionToken();
+                }
+                dbUser = refreshed;
+            }
+        }
+        return null;
     }
 
     @Transactional(readOnly = true)
