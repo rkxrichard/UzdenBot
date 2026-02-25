@@ -17,8 +17,6 @@ public interface UserRepository extends JpaRepository<User,Long> {
 
     Optional<User> findUserByUsernameIgnoreCase(String username);
 
-    Optional<User> findUserBySubscriptionToken(String subscriptionToken);
-
     Optional<User> findByReferralCodeIgnoreCase(String referralCode);
 
     long countByReferredBy(Long referredBy);
