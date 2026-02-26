@@ -27,6 +27,7 @@ public class ReferralService {
     @Value("${app.referral.referred-days:3}")
     private int referredDays;
 
+    @Transactional
     public ReferralResult applyReferral(User newUser, String rawCode) {
         String code = normalizeCode(rawCode);
         if (code == null) {
@@ -49,20 +50,8 @@ public class ReferralService {
             return ReferralResult.selfRef();
         }
 
-        ReferralResult result = applyReferralTx(newUser.getId(), referrer.getId());
-        if (result.status == ReferralStatus.APPLIED) {
-            // Привязываем новые дни к ключам, если нужно
-            vpnKeyService.ensureKeyForActiveSubscription(newUser);
-            vpnKeyService.ensureKeyForActiveSubscription(referrer);
-        }
-        return result;
-    }
-
-    @Transactional
-    protected ReferralResult applyReferralTx(Long newUserId, Long referrerId) {
-        if (newUserId == null || referrerId == null) {
-            return ReferralResult.invalidCode();
-        }
+        Long newUserId = newUser.getId();
+        Long referrerId = referrer.getId();
 
         Long firstId = Math.min(newUserId, referrerId);
         Long secondId = Math.max(newUserId, referrerId);
@@ -70,24 +59,28 @@ public class ReferralService {
         User first = userRepository.lockUser(firstId);
         User second = userRepository.lockUser(secondId);
 
-        User newUser = first.getId().equals(newUserId) ? first : second;
-        User referrer = first.getId().equals(referrerId) ? first : second;
+        User lockedNewUser = first.getId().equals(newUserId) ? first : second;
+        User lockedReferrer = first.getId().equals(referrerId) ? first : second;
 
-        if (referrer.getId().equals(newUser.getId())) {
+        if (lockedReferrer.getId().equals(lockedNewUser.getId())) {
             return ReferralResult.selfRef();
         }
-        if (newUser.getReferredBy() != null) {
+        if (lockedNewUser.getReferredBy() != null) {
             return ReferralResult.alreadyReferred();
         }
 
-        newUser.setReferredBy(referrer.getId());
-        newUser.setReferredAt(LocalDateTime.now());
-        userRepository.save(newUser);
+        lockedNewUser.setReferredBy(lockedReferrer.getId());
+        lockedNewUser.setReferredAt(LocalDateTime.now());
+        userRepository.save(lockedNewUser);
 
-        extendForUser(newUser, referredDays);
-        extendForUser(referrer, referrerDays);
+        extendForUser(lockedNewUser, referredDays);
+        extendForUser(lockedReferrer, referrerDays);
 
-        return ReferralResult.applied(referrer.getTelegramId(), referredDays, referrerDays);
+        // Привязываем новые дни к ключам, если нужно
+        vpnKeyService.ensureKeyForActiveSubscription(lockedNewUser);
+        vpnKeyService.ensureKeyForActiveSubscription(lockedReferrer);
+
+        return ReferralResult.applied(lockedReferrer.getTelegramId(), referredDays, referrerDays);
     }
 
     private void extendForUser(User user, int days) {

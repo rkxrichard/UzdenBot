@@ -90,7 +90,7 @@ public class BotUpdateHandler {
             return out;
         }
 
-        if ("/start".equals(text)) {
+        if (text != null && text.startsWith("/start")) {
             out.add(botMenuService.mainMenu(chatId, isAdmin, user));
             out.add(botMenuService.commandKeyboardMessage(chatId, isAdmin));
         }
