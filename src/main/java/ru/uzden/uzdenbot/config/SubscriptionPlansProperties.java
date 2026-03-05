@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "app.subscription-plans")
 public class SubscriptionPlansProperties {
 
-    private Plan plan1 = new Plan(1, 30, 149, "1 месяц");
-    private Plan plan2 = new Plan(2, 60, 249, "2 месяца");
+    private Plan plan1 = new Plan(1, 30, 70, "1 месяц");
+    private Plan plan2 = new Plan(2, 60, 120, "2 месяца");
 
     @Data
     public static class Plan {

@@ -43,12 +43,12 @@ app:
     plan1:
       months: 1
       days: 30
-      price: 149
+      price: 70
       label: "1 месяц"
     plan2:
       months: 2
       days: 60
-      price: 249
+      price: 120
       label: "2 месяца"
   referral:
     referrer-days: 7

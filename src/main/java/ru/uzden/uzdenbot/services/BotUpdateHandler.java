@@ -66,15 +66,15 @@ public class BotUpdateHandler {
         }
 
         if (isAdmin) {
-            if ("/admin".equalsIgnoreCase(text.trim())) {
+            if (isAdminCommand(text)) {
                 adminStateService.clear(chatId);
                 out.add(botMenuService.adminMenu(chatId));
                 out.add(botMenuService.commandKeyboardMessage(chatId, true));
                 return out;
             }
             Optional<AdminAction> pending = adminStateService.get(chatId);
-            if (pending.isPresent() && !"/start".equals(text)) {
-                if ("/cancel".equalsIgnoreCase(text.trim())) {
+            if (pending.isPresent() && !isStartCommand(text)) {
+                if (isCancelCommand(text)) {
                     adminStateService.clear(chatId);
                     out.add(BotMessageFactory.simpleMessage(chatId, "✅ Действие отменено."));
                     return out;
@@ -90,7 +90,7 @@ public class BotUpdateHandler {
             return out;
         }
 
-        if (text != null && text.startsWith("/start")) {
+        if (isStartCommand(text)) {
             out.add(botMenuService.mainMenu(chatId, isAdmin, user));
             out.add(botMenuService.commandKeyboardMessage(chatId, isAdmin));
         }
@@ -222,42 +222,42 @@ public class BotUpdateHandler {
                     adminStateService.set(chatId, AdminAction.ADD_SUBSCRIPTION);
                     out.add(BotMessageFactory.simpleMessage(chatId,
                             "Отправьте @username и количество дней через пробел, например:\n\n@user 30\n\n" +
-                                    "Подписка будет привязана к первому ключу (или ключ будет создан).\n\n/cancel — отмена."));
+                                    "Подписка будет привязана к первому ключу (или ключ будет создан).\n\nОтмена (или /cancel) — отмена."));
                 }
             }
             case "ADMIN_CHECK_SUB" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.CHECK_SUBSCRIPTION);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте @username для проверки подписок по ключам.\n\n/cancel — отмена."));
+                            "Отправьте @username для проверки подписок по ключам.\n\nОтмена (или /cancel) — отмена."));
                 }
             }
             case "ADMIN_REVOKE_SUB" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.REVOKE_SUBSCRIPTION);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте @username, чтобы отключить все активные подписки.\n\n/cancel — отмена."));
+                            "Отправьте @username, чтобы отключить все активные подписки.\n\nОтмена (или /cancel) — отмена."));
                 }
             }
             case "ADMIN_DISABLE_USER" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.DISABLE_USER);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте @username, чтобы отключить пользователя.\n\n/cancel — отмена."));
+                            "Отправьте @username, чтобы отключить пользователя.\n\nОтмена (или /cancel) — отмена."));
                 }
             }
             case "ADMIN_ENABLE_USER" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.ENABLE_USER);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте @username, чтобы включить пользователя.\n\n/cancel — отмена."));
+                            "Отправьте @username, чтобы включить пользователя.\n\nОтмена (или /cancel) — отмена."));
                 }
             }
             case "ADMIN_BROADCAST" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.BROADCAST);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте текст рассылки. Сообщение будет отправлено всем пользователям.\n\n/cancel — отмена."));
+                            "Отправьте текст рассылки. Сообщение будет отправлено всем пользователям.\n\nОтмена (или /cancel) — отмена."));
                 }
             }
             case "ADMIN_PURGE_DISABLED_KEYS" -> {
@@ -338,6 +338,26 @@ public class BotUpdateHandler {
         if (parts.length < 2) return null;
         String payload = parts[1].trim();
         return payload.isBlank() ? null : payload;
+    }
+
+    private boolean isStartCommand(String text) {
+        if (text == null) return false;
+        String t = text.trim();
+        if (t.equalsIgnoreCase("/start")) return true;
+        if (t.equalsIgnoreCase("старт")) return true;
+        return t.toLowerCase().startsWith("/start ");
+    }
+
+    private boolean isAdminCommand(String text) {
+        if (text == null) return false;
+        String t = text.trim();
+        return t.equalsIgnoreCase("/admin") || t.equalsIgnoreCase("админ");
+    }
+
+    private boolean isCancelCommand(String text) {
+        if (text == null) return false;
+        String t = text.trim();
+        return t.equalsIgnoreCase("/cancel") || t.equalsIgnoreCase("отмена");
     }
 
     private boolean handleKeyGet(List<BotApiMethod<?>> out, Long chatId, String callbackId, User user, Long keyId) {
