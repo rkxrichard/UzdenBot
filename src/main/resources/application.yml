@@ -85,18 +85,19 @@ telegram:
     ❗️Если импорт не появился, вставьте ключ вручную через «Добавить».
 
 xui:
-  inbound-id: 2
-  public-host: 46.226.164.227
-  public-port: 8443
+  inbound-id: 3
+  public-host: 62.60.229.102
+  public-port: 8441
   link-tag: "Германия"
   link-group: REDCastle
-  reality-sni: web.max.ru
-  reality-target: web.max.ru:443
+  reality-sni: vk.ru
+  reality-target: vk.ru:443
+  reality-public-key: GqyVf9HVx2XIcKelXBmWncARaQJIlmZ_meEERpk2-iI
   # base-url: ${XUI_BASE_URL}
   # base-path: ${XUI_BASE_PATH}
   # username: ${XUI_USERNAME}
   # password: ${XUI_PASSWORD}
-  base-url: http://46.226.164.227:8080
+  base-url: http://62.60.229.102:8080
   base-path: /hzxIlrhXF2GmPjywyD/
   username: ibragim
   password: xasuev9595
@@ -107,5 +108,3 @@ yookassa:
   api-base: https://api.yookassa.ru/v3
   return-url: "${YOOKASSA_RETURN_URL:https://t.me/${telegram.bot.username}}"
   webhook-secret: ${YOOKASSA_WEBHOOK_SECRET:}
-
-reality-public-key: Pj_IB9l-avl-H0FiVqjZ3VaYYhXks0ukI3ZAQJlUuns

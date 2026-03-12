@@ -56,10 +56,10 @@ public class VpnKey {
     /* ===== связь с 3x-ui/Xray ===== */
 
     /**
-     * ID inbound в 3x-ui (у тебя сейчас 1).
+     * ID inbound в 3x-ui.
      */
     @Column(name = "inbound_id", nullable = false)
-    private Long inboundId = 1L;
+    private Long inboundId = 3L;
 
     /**
      * UUID клиента (clients[].id) — главный идентификатор клиента в 3x-ui.

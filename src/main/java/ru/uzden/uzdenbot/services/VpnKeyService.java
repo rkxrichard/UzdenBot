@@ -50,9 +50,9 @@ public class VpnKeyService {
             ThreeXuiClient xuiClient,
             VlessLinkBuilder linkBuilder,
             TransactionTemplate tx,
-            @Value("${xui.inbound-id:1}") Long inbound,
-            @Value("${xui.public-host:80.66.84.34}") String publicHost,
-            @Value("${xui.public-port:443}") int publicPort,
+            @Value("${xui.inbound-id:3}") Long inbound,
+            @Value("${xui.public-host:62.60.229.102}") String publicHost,
+            @Value("${xui.public-port:8441}") int publicPort,
             @Value("${xui.link-tag:reality443-auto}") String linkTag,
             @Value("${xui.link-group:}") String linkGroup) {
         this.vpnKeyRepository = vpnKeyRepository;
