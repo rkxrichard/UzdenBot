@@ -99,8 +99,8 @@ xui:
   # password: ${XUI_PASSWORD}
   base-url: http://62.60.229.102:8080
   base-path: /nFuOWMmJ4eDqc0n1cm/
-  username: ibragim
-  password: xasuev9595
+  username: ZVo8ew3XVo
+  password: RaAdYhFnuo
 
 yookassa:
   shop-id: ${YOOKASSA_SHOP_ID:YOUR_SHOP_ID}
