@@ -58,10 +58,10 @@ telegram:
   bot:
     token: ${TELEGRAM_BOT_TOKEN}
     username: ${TELEGRAM_BOT_USERNAME}
-  admin-ids: "980389038,592239190"
+  admin-ids: "980389038"
   support-username: ${TELEGRAM_SUPPORT_USERNAME:@your_support}
   main-menu-text: |-
-    🏰 REDCastle
+    🏰 WayGuard
     ━━━━━━━━━━━━
     Добро пожаловать!
     Выберите раздел ниже 👇
