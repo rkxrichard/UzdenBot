@@ -89,7 +89,7 @@ xui:
   public-host: 62.60.229.102
   public-port: 8441
   link-tag: "WayVPN"
-  link-group: REDCastle
+  link-group: WayGuard
   reality-sni: vk.ru
   reality-target: vk.ru:443
   reality-public-key: GqyVf9HVx2XIcKelXBmWncARaQJIlmZ_meEERpk2-iI
