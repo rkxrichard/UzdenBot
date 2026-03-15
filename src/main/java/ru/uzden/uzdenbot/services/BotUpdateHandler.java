@@ -514,50 +514,7 @@ public class BotUpdateHandler {
 
     private boolean handleKeyPlanPurchase(List<BotApiMethod<?>> out, Long chatId, String callbackId,
                                           User user, Long keyId, int days, int price, String label) {
-        if (!acquireIdempotency(out, callbackId, "plan:" + days + ":" + user.getId() + ":" + (keyId == null ? "new" : keyId))) {
-            return true;
-        }
-        if (keyId == null && !vpnKeyService.canCreateNewKey(user)) {
-            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Достигнут лимит ключей (макс 3)."));
-            out.add(botMenuService.myKeysMenu(chatId, user));
-            return false;
-        }
-        VpnKey targetKey = null;
-        if (keyId != null) {
-            try {
-                targetKey = vpnKeyService.findKeyForUser(user, keyId);
-            } catch (Exception e) {
-                out.add(BotMessageFactory.simpleMessage(chatId, "❌ Ключ не найден."));
-                out.add(botMenuService.myKeysMenu(chatId, user));
-                return false;
-            }
-        }
-        try {
-            PaymentService.PaymentInitResult init = paymentService.createPayment(user, targetKey, days, price, label);
-            String url = init.confirmationUrl();
-            if (url != null && !url.isBlank()) {
-                String msg = "💳 Счет на " + label + " создан.\n" +
-                        (keyId == null ? "Назначение: новый ключ\n" : "Назначение: продление ключа\n") +
-                        "Сумма: " + price + "₽\n\n" +
-                        "Оплатить: <a href=\"" + BotTextUtils.escapeHtml(url) + "\">перейти к оплате</a>\n\n" +
-                        "После оплаты подписка активируется автоматически.";
-                SendMessage sm = SendMessage.builder()
-                        .chatId(chatId.toString())
-                        .text(msg)
-                        .parseMode("HTML")
-                        .build();
-                out.add(sm);
-            } else {
-                String msg = "💳 Счет на " + label + " создан.\n" +
-                        (keyId == null ? "Назначение: новый ключ\n" : "Назначение: продление ключа\n") +
-                        "Сумма: " + price + "₽\n" +
-                        "Ссылка на оплату пока недоступна. Попробуйте еще раз чуть позже.";
-                out.add(BotMessageFactory.simpleMessage(chatId, msg));
-            }
-        } catch (Exception e) {
-            String msg = "❌ Не удалось создать платеж. Попробуйте еще раз позже.";
-            out.add(BotMessageFactory.simpleMessage(chatId, msg));
-        }
+        out.add(BotMessageFactory.simpleMessage(chatId, "Пока нет оплаты."));
         return false;
     }
 
