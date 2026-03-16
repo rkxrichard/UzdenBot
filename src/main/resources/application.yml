@@ -59,7 +59,7 @@ telegram:
     token: ${TELEGRAM_BOT_TOKEN}
     username: ${TELEGRAM_BOT_USERNAME}
   admin-ids: "980389038"
-  support-username: ${TELEGRAM_SUPPORT_USERNAME:@your_support}
+  support-username: ${TELEGRAM_SUPPORT_USERNAME:@xdersee}
   main-menu-text: |-
     🏰 WayGuard
     ━━━━━━━━━━━━
