@@ -5,11 +5,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import ru.uzden.uzdenbot.services.BotUpdateHandler;
 import ru.uzden.uzdenbot.services.UpdateGuardService;
 
+import java.io.Serializable;
 import java.util.List;
 
 @Slf4j
@@ -63,6 +65,10 @@ public class MainBot extends TelegramLongPollingBot {
         for (BotApiMethod<?> method : methods) {
             execute(method);
         }
+    }
+
+    public <T extends Serializable, M extends BotApiMethod<T>> T executeMethod(M method) throws TelegramApiException {
+        return execute(method);
     }
 
 }

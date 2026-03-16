@@ -686,13 +686,13 @@ public class BotMenuService {
     private ReplyKeyboardMarkup buildCommandKeyboard(boolean isAdmin) {
         List<KeyboardRow> rows = new ArrayList<>();
         KeyboardRow row1 = new KeyboardRow();
-        row1.add(KeyboardButton.builder().text("Старт").build());
+        row1.add(KeyboardButton.builder().text("/start").build());
         rows.add(row1);
 
         if (isAdmin) {
             KeyboardRow row2 = new KeyboardRow();
-            row2.add(KeyboardButton.builder().text("Админ").build());
-            row2.add(KeyboardButton.builder().text("Отмена").build());
+            row2.add(KeyboardButton.builder().text("/admin").build());
+            row2.add(KeyboardButton.builder().text("/cancel").build());
             rows.add(row2);
         }
 

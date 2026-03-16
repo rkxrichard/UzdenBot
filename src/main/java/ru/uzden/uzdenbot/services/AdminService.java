@@ -33,4 +33,8 @@ public class AdminService {
     public boolean isAdmin(Long telegramId) {
         return telegramId != null && adminIds.contains(telegramId);
     }
+
+    public Set<Long> getAdminIds() {
+        return adminIds;
+    }
 }
