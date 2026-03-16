@@ -104,7 +104,7 @@ xui:
 
 yookassa:
   shop-id: ${YOOKASSA_SHOP_ID:YOUR_SHOP_ID}
-  secret-key: "${YOOKASSA_SECRET_KEY:test_*gmOV4JvrEeg-wEZauyk9nhZvUgM1nZJf98h7L4wrbDDYtest_*gmOV4JvrEeg-wEZauyk9nhZvUgM1nZJf98h7L4wrbDDY}"
+  secret-key: "${YOOKASSA_SECRET_KEY:test_*gyg0NJPb01g3cJ3-MQtQ-GGq13Iv2le12oi2Bv2Hd1q4}"
   api-base: https://api.yookassa.ru/v3
   return-url: "${YOOKASSA_RETURN_URL:https://t.me/${telegram.bot.username}}"
   webhook-secret: ${YOOKASSA_WEBHOOK_SECRET:}
