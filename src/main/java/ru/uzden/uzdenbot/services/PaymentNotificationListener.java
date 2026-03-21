@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import ru.uzden.uzdenbot.bots.MainBot;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.repositories.PaymentRepository;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 import ru.uzden.uzdenbot.utils.BotTextUtils;
 
@@ -18,6 +19,7 @@ public class PaymentNotificationListener {
 
     private final MainBot mainBot;
     private final BotMenuService botMenuService;
+    private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final VpnKeyService vpnKeyService;
 
@@ -35,7 +37,7 @@ public class PaymentNotificationListener {
             SendMessage statusMessage = buildStatusMessage(event);
             mainBot.execute(statusMessage);
             if ("succeeded".equalsIgnoreCase(event.status()) && event.newKey() && event.keyId() != null) {
-                sendKeyIfPossible(user, event.keyId());
+                sendKeyIfPossible(user, event.keyId(), isFirstSuccessfulPurchase(user));
             }
             mainBot.execute(botMenuService.myKeysMenu(event.telegramId(), user));
         } catch (Exception e) {
@@ -70,18 +72,15 @@ public class PaymentNotificationListener {
                 .build();
     }
 
-    private void sendKeyIfPossible(User user, Long keyId) {
+    private void sendKeyIfPossible(User user, Long keyId, boolean includeInstructions) {
         try {
             var key = vpnKeyService.getKeyForUser(user, keyId);
-            String msg = "🔑 Ваш VPN-ключ:\n\n" +
-                    "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
-                    "📌 Скопируйте ссылку и импортируйте в клиент.";
-            SendMessage sm = SendMessage.builder()
-                    .chatId(user.getTelegramId().toString())
-                    .text(msg)
-                    .parseMode("HTML")
-                    .build();
-            mainBot.execute(sm);
+            mainBot.execute(botMenuService.keyDeliveryMessage(
+                    user.getTelegramId(),
+                    key.getKeyValue(),
+                    includeInstructions,
+                    false
+            ));
         } catch (Exception e) {
             String msg = "❌ Не удалось автоматически выдать ключ: " + e.getMessage();
             SendMessage sm = SendMessage.builder()
@@ -93,5 +92,9 @@ public class PaymentNotificationListener {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private boolean isFirstSuccessfulPurchase(User user) {
+        return paymentRepository.countByUserAndProcessedAtIsNotNullAndStatusIgnoreCase(user, "succeeded") == 1;
     }
 }

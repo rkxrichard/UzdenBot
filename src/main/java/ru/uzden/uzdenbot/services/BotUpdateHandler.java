@@ -193,13 +193,8 @@ public class BotUpdateHandler {
                 }
             }
             case "MENU_BUY" -> {
-                if (vpnKeyService.listUserKeys(user).isEmpty()) {
-                    out.add(BotMessageFactory.editFromSendMessage(
-                            botMenuService.subscriptionPlanMenu(chatId), chatId, messageId));
-                } else {
-                    out.add(BotMessageFactory.editFromSendMessage(
-                            botMenuService.myKeysMenu(chatId, user), chatId, messageId));
-                }
+                out.add(BotMessageFactory.editFromSendMessage(
+                        botMenuService.subscriptionMenu(chatId), chatId, messageId));
             }
             case "BUY_1M" -> {
                 SubscriptionPlansProperties.Plan p1 = subscriptionPlansProperties.getPlan1();
@@ -374,15 +369,7 @@ public class BotUpdateHandler {
         try {
             vpnKeyService.ensureKeyForActiveSubscription(user);
             var key = vpnKeyService.getKeyForUser(user, keyId);
-            String msg = "🔑 Ваш VPN-ключ:\n\n" +
-                    "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
-                    "📌 Скопируйте ссылку и импортируйте в клиент.";
-            SendMessage sm = SendMessage.builder()
-                    .chatId(chatId.toString())
-                    .text(msg)
-                    .parseMode("HTML")
-                    .build();
-            out.add(sm);
+            out.add(botMenuService.keyDeliveryMessage(chatId, key.getKeyValue(), false, false));
         } catch (Exception e) {
             if (isNoActiveSubscriptionError(e)) {
                 InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
@@ -475,15 +462,7 @@ public class BotUpdateHandler {
         try {
             vpnKeyService.ensureKeyForActiveSubscription(user);
             var key = vpnKeyService.replaceKeyForUser(user, keyId);
-            String msg = "🔄 Ключ заменён. Новый ключ:\n\n" +
-                    "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
-                    "📌 Старый ключ отключён.";
-            SendMessage sm = SendMessage.builder()
-                    .chatId(chatId.toString())
-                    .text(msg)
-                    .parseMode("HTML")
-                    .build();
-            out.add(sm);
+            out.add(botMenuService.keyDeliveryMessage(chatId, key.getKeyValue(), false, true));
         } catch (Exception e) {
             if (isNoActiveSubscriptionError(e)) {
                 InlineKeyboardButton bRenew = InlineKeyboardButton.builder()

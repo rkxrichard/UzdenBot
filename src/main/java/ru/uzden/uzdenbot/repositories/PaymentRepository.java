@@ -20,6 +20,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     List<Payment> findTop5ByUserAndProcessedAtIsNullAndProviderOrderByCreatedAtDesc(User user, String provider);
 
+    long countByUserAndProcessedAtIsNotNullAndStatusIgnoreCase(User user, String status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Payment p where p.id = :id")
     Payment lockById(@Param("id") Long id);
