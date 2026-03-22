@@ -271,6 +271,20 @@ public class BotUpdateHandler {
                                     "Отмена (или /cancel) — отмена."));
                 }
             }
+            case "ADMIN_RESET_REF_LINK" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.RESET_REFERRAL_LINK_COUNTER);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "Отправьте саму уникальную ссылку или её код, чтобы обнулить счётчик переходов.\n\nОтмена (или /cancel) — отмена."));
+                }
+            }
+            case "ADMIN_DELETE_REF_LINK" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.DELETE_REFERRAL_LINK);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "Отправьте саму уникальную ссылку или её код, чтобы удалить её.\n\nОтмена (или /cancel) — отмена."));
+                }
+            }
             case "ADMIN_PURGE_DISABLED_KEYS" -> {
                 if (isAdmin) {
                     InlineKeyboardButton bYes = InlineKeyboardButton.builder()
@@ -332,6 +346,8 @@ public class BotUpdateHandler {
                     out.add(BotMessageFactory.simpleMessage(refTg,
                             "🎉 Ваш реферал активировался! Вам начислено " + result.referrerDays + " дн."));
                 }
+            }
+            case TRACKED_APPLIED, TRACKED_IGNORED -> {
             }
             case SELF_REF -> out.add(BotMessageFactory.simpleMessage(chatId, "Нельзя использовать свою реферальную ссылку."));
             case ALREADY_REFERRED -> out.add(BotMessageFactory.simpleMessage(chatId, "Реферал уже был активирован ранее."));

@@ -134,6 +134,14 @@ public class BotMenuService {
                 .text("📊 Статистика реф. ссылок")
                 .callbackData("ADMIN_REF_LINK_STATS")
                 .build();
+        InlineKeyboardButton bResetReferralCounter = InlineKeyboardButton.builder()
+                .text("♻️ Обнулить счётчик")
+                .callbackData("ADMIN_RESET_REF_LINK")
+                .build();
+        InlineKeyboardButton bDeleteReferralLink = InlineKeyboardButton.builder()
+                .text("🗑 Удалить реф. ссылку")
+                .callbackData("ADMIN_DELETE_REF_LINK")
+                .build();
         InlineKeyboardButton bRevokeSub = InlineKeyboardButton.builder()
                 .text("🛑 Отключить подписку")
                 .callbackData("ADMIN_REVOKE_SUB")
@@ -163,6 +171,8 @@ public class BotMenuService {
                         List.of(bBroadcast),
                         List.of(bCreateReferralLink),
                         List.of(bReferralStats),
+                        List.of(bResetReferralCounter),
+                        List.of(bDeleteReferralLink),
                         List.of(bRevokeSub),
                         List.of(bDisableUser),
                         List.of(bEnableUser),

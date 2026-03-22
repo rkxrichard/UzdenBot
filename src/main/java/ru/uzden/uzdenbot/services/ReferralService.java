@@ -51,6 +51,10 @@ public class ReferralService {
             return ReferralResult.invalidCode();
         }
 
+        if (target.trackedLink() != null) {
+            return applyTrackedReferral(newUser, target.trackedLink());
+        }
+
         User referrer = target.referrer();
         if (referrer.getId() == null) {
             return ReferralResult.invalidCode();
@@ -94,6 +98,40 @@ public class ReferralService {
     }
 
     @Transactional
+    protected ReferralResult applyTrackedReferral(User newUser, ReferralLink trackedLink) {
+        if (trackedLink == null || trackedLink.getId() == null) {
+            return ReferralResult.invalidCode();
+        }
+
+        User referrer = trackedLink.getReferrerUser();
+        if (referrer == null || referrer.getId() == null) {
+            return ReferralResult.invalidCode();
+        }
+        if (referrer.getId().equals(newUser.getId())) {
+            return ReferralResult.selfRef();
+        }
+
+        User lockedNewUser = userRepository.lockUser(newUser.getId());
+        Optional<ReferralLink> lockedLinkOpt = referralLinkRepository.findById(trackedLink.getId());
+        if (lockedLinkOpt.isEmpty()) {
+            return ReferralResult.invalidCode();
+        }
+        ReferralLink lockedLink = lockedLinkOpt.get();
+
+        if (lockedNewUser.getReferredLinkId() != null || lockedNewUser.getReferredBy() != null) {
+            return ReferralResult.trackedIgnored();
+        }
+
+        lockedNewUser.setReferredLinkId(lockedLink.getId());
+        userRepository.save(lockedNewUser);
+
+        lockedLink.setTransitionsCount(lockedLink.getTransitionsCount() + 1);
+        referralLinkRepository.save(lockedLink);
+
+        return ReferralResult.trackedApplied();
+    }
+
+    @Transactional
     public CreatedReferralLink createTrackedLink(User referrer) {
         if (referrer == null || referrer.getId() == null) {
             throw new IllegalArgumentException("Referrer user is required");
@@ -102,22 +140,23 @@ public class ReferralService {
         ReferralLink link = new ReferralLink();
         link.setReferrerUser(referrer);
         link.setCode(generateUniqueTrackedCode());
+        link.setTransitionsCount(0);
         link = referralLinkRepository.save(link);
 
-        return new CreatedReferralLink(link.getId(), referrer.getId(), link.getCode(), link.getCreatedAt());
+        return new CreatedReferralLink(link.getId(), referrer.getId(), link.getCode(), link.getCreatedAt(), link.getTransitionsCount());
     }
 
     @Transactional(readOnly = true)
     public ReferralLinksStats getTrackedLinksStats(User referrer) {
         if (referrer == null || referrer.getId() == null) {
-            return new ReferralLinksStats(0, 0, List.of());
+            return new ReferralLinksStats(0, 0, 0, List.of());
         }
 
         List<ReferralLink> links = referralLinkRepository.findByReferrerUserIdOrderByCreatedAtDesc(referrer.getId());
         List<TrackedReferralLinkStat> stats = new ArrayList<>();
         long trackedInvited = 0;
         for (ReferralLink link : links) {
-            long invited = userRepository.countByReferredLinkId(link.getId());
+            long invited = link.getTransitionsCount();
             trackedInvited += invited;
             stats.add(new TrackedReferralLinkStat(
                     link.getId(),
@@ -128,9 +167,9 @@ public class ReferralService {
             ));
         }
 
-        long totalInvited = userRepository.countByReferredBy(referrer.getId());
-        long regularInvited = Math.max(0, totalInvited - trackedInvited);
-        return new ReferralLinksStats(totalInvited, regularInvited, stats);
+        long regularInvited = userRepository.countByReferredBy(referrer.getId());
+        long totalInvited = regularInvited + trackedInvited;
+        return new ReferralLinksStats(totalInvited, regularInvited, trackedInvited, stats);
     }
 
     @Transactional(readOnly = true)
@@ -146,8 +185,54 @@ public class ReferralService {
                         link.getReferrerUser() == null ? null : link.getReferrerUser().getId(),
                         link.getCode(),
                         link.getCreatedAt(),
-                        userRepository.countByReferredLinkId(link.getId())
+                        link.getTransitionsCount()
                 ));
+    }
+
+    @Transactional
+    public Optional<TrackedReferralLinkStat> resetTrackedLinkCounter(String rawCode) {
+        String code = normalizeCode(rawCode);
+        if (code == null) {
+            return Optional.empty();
+        }
+        Optional<ReferralLink> linkOpt = referralLinkRepository.findByCodeIgnoreCase(code);
+        if (linkOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ReferralLink link = linkOpt.get();
+        link.setTransitionsCount(0);
+        link = referralLinkRepository.save(link);
+        return Optional.of(new TrackedReferralLinkStat(
+                link.getId(),
+                link.getReferrerUser() == null ? null : link.getReferrerUser().getId(),
+                link.getCode(),
+                link.getCreatedAt(),
+                link.getTransitionsCount()
+        ));
+    }
+
+    @Transactional
+    public Optional<DeletedReferralLink> deleteTrackedLink(String rawCode) {
+        String code = normalizeCode(rawCode);
+        if (code == null) {
+            return Optional.empty();
+        }
+        Optional<ReferralLink> linkOpt = referralLinkRepository.findByCodeIgnoreCase(code);
+        if (linkOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ReferralLink link = linkOpt.get();
+        DeletedReferralLink deleted = new DeletedReferralLink(
+                link.getId(),
+                link.getReferrerUser() == null ? null : link.getReferrerUser().getId(),
+                link.getCode(),
+                link.getCreatedAt(),
+                link.getTransitionsCount()
+        );
+        referralLinkRepository.delete(link);
+        return Optional.of(deleted);
     }
 
     public String buildReferralUrl(String botUsername, String code) {
@@ -179,11 +264,11 @@ public class ReferralService {
             if (referrer == null || referrer.getId() == null) {
                 return null;
             }
-            return new ReferralTarget(referrer, link.getId());
+            return new ReferralTarget(referrer, link.getId(), link);
         }
 
         return userRepository.findByReferralCodeIgnoreCase(code)
-                .map(user -> new ReferralTarget(user, null))
+                .map(user -> new ReferralTarget(user, null, null))
                 .orElse(null);
     }
 
@@ -227,6 +312,8 @@ public class ReferralService {
     public enum ReferralStatus {
         NO_CODE,
         APPLIED,
+        TRACKED_APPLIED,
+        TRACKED_IGNORED,
         INVALID_CODE,
         SELF_REF,
         ALREADY_REFERRED
@@ -264,13 +351,22 @@ public class ReferralService {
         public static ReferralResult applied(Long referrerTelegramId, int referredDays, int referrerDays) {
             return new ReferralResult(ReferralStatus.APPLIED, referrerTelegramId, referredDays, referrerDays);
         }
+
+        public static ReferralResult trackedApplied() {
+            return new ReferralResult(ReferralStatus.TRACKED_APPLIED, null, 0, 0);
+        }
+
+        public static ReferralResult trackedIgnored() {
+            return new ReferralResult(ReferralStatus.TRACKED_IGNORED, null, 0, 0);
+        }
     }
 
     public record CreatedReferralLink(
             Long linkId,
             Long referrerUserId,
             String code,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            long transitionsCount
     ) {
     }
 
@@ -286,10 +382,20 @@ public class ReferralService {
     public record ReferralLinksStats(
             long totalInvitedCount,
             long regularInvitedCount,
+            long trackedInvitedCount,
             List<TrackedReferralLinkStat> links
     ) {
     }
 
-    private record ReferralTarget(User referrer, Long referralLinkId) {
+    public record DeletedReferralLink(
+            Long linkId,
+            Long referrerUserId,
+            String code,
+            LocalDateTime createdAt,
+            long transitionsCount
+    ) {
+    }
+
+    private record ReferralTarget(User referrer, Long referralLinkId, ReferralLink trackedLink) {
     }
 }

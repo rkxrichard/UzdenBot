@@ -24,6 +24,9 @@ public class ReferralLink {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "transitions_count", nullable = false)
+    private long transitionsCount;
+
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {

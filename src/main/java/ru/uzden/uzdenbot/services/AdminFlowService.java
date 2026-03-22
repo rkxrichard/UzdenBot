@@ -40,6 +40,8 @@ public class AdminFlowService {
             case BROADCAST -> handleBroadcast(chatId, text, out);
             case CREATE_REFERRAL_LINK -> handleCreateReferralLink(chatId, trimmed, out);
             case REFERRAL_LINK_STATS -> handleReferralLinkStats(chatId, trimmed, out);
+            case RESET_REFERRAL_LINK_COUNTER -> handleResetReferralLinkCounter(chatId, trimmed, out);
+            case DELETE_REFERRAL_LINK -> handleDeleteReferralLink(chatId, trimmed, out);
             default -> {
             }
         }
@@ -276,7 +278,8 @@ public class AdminFlowService {
                         "Пользователь: " + displayUser(user) + "\n" +
                         "Код: " + link.code() + "\n" +
                         "Создана: " + BotTextUtils.formatDate(link.createdAt()) + "\n" +
-                        "Пришло по ссылке: 0\n\n" +
+                        "Переходов по ссылке: " + link.transitionsCount() + "\n" +
+                        "Бонусные дни по этой ссылке не начисляются.\n\n" +
                         "Ссылка:\n" + url));
     }
 
@@ -312,6 +315,46 @@ public class AdminFlowService {
         out.add(BotMessageFactory.simpleMessage(chatId, buildSingleReferralLinkStatsMessage(statOpt.get())));
     }
 
+    private void handleResetReferralLinkCounter(Long chatId, String text, List<SendMessage> out) {
+        if (text == null || text.isBlank()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Отправьте ссылку или код, чтобы обнулить счётчик."));
+            return;
+        }
+
+        Optional<ReferralService.TrackedReferralLinkStat> statOpt = referralService.resetTrackedLinkCounter(text);
+        if (statOpt.isEmpty()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Реферальная ссылка не найдена."));
+            return;
+        }
+
+        ReferralService.TrackedReferralLinkStat stat = statOpt.get();
+        adminStateService.clear(chatId);
+        out.add(BotMessageFactory.simpleMessage(chatId,
+                "♻️ Счётчик переходов обнулён.\n" +
+                        "Код: " + stat.code() + "\n" +
+                        "Ссылка:\n" + referralService.buildReferralUrl(botUsername, stat.code())));
+    }
+
+    private void handleDeleteReferralLink(Long chatId, String text, List<SendMessage> out) {
+        if (text == null || text.isBlank()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Отправьте ссылку или код, чтобы удалить её."));
+            return;
+        }
+
+        Optional<ReferralService.DeletedReferralLink> deletedOpt = referralService.deleteTrackedLink(text);
+        if (deletedOpt.isEmpty()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Реферальная ссылка не найдена."));
+            return;
+        }
+
+        ReferralService.DeletedReferralLink deleted = deletedOpt.get();
+        adminStateService.clear(chatId);
+        out.add(BotMessageFactory.simpleMessage(chatId,
+                "🗑 Реферальная ссылка удалена.\n" +
+                        "Код: " + deleted.code() + "\n" +
+                        "Удалённый счётчик переходов: " + deleted.transitionsCount()));
+    }
+
     private Optional<User> findUserByIdentifier(String identifier) {
         if (identifier == null || identifier.isBlank()) return Optional.empty();
         if (identifier.chars().allMatch(Character::isDigit)) {
@@ -327,8 +370,9 @@ public class AdminFlowService {
     private String buildReferralStatsMessage(User user, ReferralService.ReferralLinksStats stats) {
         StringBuilder sb = new StringBuilder();
         sb.append("📊 Реферальные ссылки ").append(displayUser(user)).append("\n")
-                .append("Всего приглашено: ").append(stats.totalInvitedCount()).append("\n")
-                .append("По обычной ссылке: ").append(stats.regularInvitedCount());
+                .append("Всего пришло: ").append(stats.totalInvitedCount()).append("\n")
+                .append("По обычной бонусной ссылке: ").append(stats.regularInvitedCount()).append("\n")
+                .append("По уникальным трекинговым ссылкам: ").append(stats.trackedInvitedCount());
 
         if (stats.links().isEmpty()) {
             sb.append("\n\nУникальных ссылок пока нет.");
@@ -339,7 +383,7 @@ public class AdminFlowService {
             ReferralService.TrackedReferralLinkStat link = stats.links().get(i);
             sb.append("\n\n")
                     .append(i + 1)
-                    .append(") Пришло: ")
+                    .append(") Переходов: ")
                     .append(link.invitedCount())
                     .append("\nСоздана: ")
                     .append(BotTextUtils.formatDate(link.createdAt()))
@@ -353,7 +397,8 @@ public class AdminFlowService {
 
     private String buildSingleReferralLinkStatsMessage(ReferralService.TrackedReferralLinkStat link) {
         return "📊 Статистика реферальной ссылки\n" +
-                "Пришло: " + link.invitedCount() + "\n" +
+                "Переходов: " + link.invitedCount() + "\n" +
+                "Бонусные дни по этой ссылке не начисляются.\n" +
                 "Создана: " + BotTextUtils.formatDate(link.createdAt()) + "\n" +
                 "Код: " + link.code() + "\n" +
                 "Ссылка:\n" + referralService.buildReferralUrl(botUsername, link.code());
