@@ -2,6 +2,7 @@ package ru.uzden.uzdenbot.services;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import ru.uzden.uzdenbot.entities.Subscription;
@@ -22,6 +23,10 @@ public class AdminFlowService {
     private final SubscriptionService subscriptionService;
     private final UserService userService;
     private final VpnKeyService vpnKeyService;
+    private final ReferralService referralService;
+
+    @Value("${telegram.bot.username:}")
+    private String botUsername;
 
     public List<SendMessage> handleAdminInput(Long chatId, String text, AdminAction action) {
         List<SendMessage> out = new ArrayList<>();
@@ -33,6 +38,8 @@ public class AdminFlowService {
             case DISABLE_USER -> handleDisableUser(chatId, trimmed, out);
             case ENABLE_USER -> handleEnableUser(chatId, trimmed, out);
             case BROADCAST -> handleBroadcast(chatId, text, out);
+            case CREATE_REFERRAL_LINK -> handleCreateReferralLink(chatId, trimmed, out);
+            case REFERRAL_LINK_STATS -> handleReferralLinkStats(chatId, trimmed, out);
             default -> {
             }
         }
@@ -246,6 +253,65 @@ public class AdminFlowService {
                 "📣 Рассылка отправлена: " + delivered + " пользователей."));
     }
 
+    private void handleCreateReferralLink(Long chatId, String text, List<SendMessage> out) {
+        String identifier = firstTokenIdentifier(text);
+        if (identifier == null) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username или telegram id пользователя."));
+            return;
+        }
+
+        Optional<User> userOpt = findUserByIdentifier(identifier);
+        if (userOpt.isEmpty()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Пользователь не найден. Он должен сначала написать /start."));
+            return;
+        }
+
+        User user = userOpt.get();
+        ReferralService.CreatedReferralLink link = referralService.createTrackedLink(user);
+        String url = referralService.buildReferralUrl(botUsername, link.code());
+
+        adminStateService.clear(chatId);
+        out.add(BotMessageFactory.simpleMessage(chatId,
+                "🔗 Уникальная реферальная ссылка создана.\n" +
+                        "Пользователь: " + displayUser(user) + "\n" +
+                        "Код: " + link.code() + "\n" +
+                        "Создана: " + BotTextUtils.formatDate(link.createdAt()) + "\n" +
+                        "Пришло по ссылке: 0\n\n" +
+                        "Ссылка:\n" + url));
+    }
+
+    private void handleReferralLinkStats(Long chatId, String text, List<SendMessage> out) {
+        if (text == null || text.isBlank()) {
+            out.add(BotMessageFactory.simpleMessage(chatId,
+                    "Отправьте @username / telegram id пользователя или саму ссылку / код."));
+            return;
+        }
+
+        String trimmed = text.trim();
+        if (trimmed.startsWith("@") || trimmed.chars().allMatch(Character::isDigit)) {
+            Optional<User> userOpt = findUserByIdentifier(firstTokenIdentifier(trimmed));
+            if (userOpt.isEmpty()) {
+                out.add(BotMessageFactory.simpleMessage(chatId, "Пользователь не найден. Он должен сначала написать /start."));
+                return;
+            }
+
+            User user = userOpt.get();
+            ReferralService.ReferralLinksStats stats = referralService.getTrackedLinksStats(user);
+            adminStateService.clear(chatId);
+            out.add(BotMessageFactory.simpleMessage(chatId, buildReferralStatsMessage(user, stats)));
+            return;
+        }
+
+        Optional<ReferralService.TrackedReferralLinkStat> statOpt = referralService.findTrackedLinkStats(trimmed);
+        if (statOpt.isEmpty()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Реферальная ссылка не найдена."));
+            return;
+        }
+
+        adminStateService.clear(chatId);
+        out.add(BotMessageFactory.simpleMessage(chatId, buildSingleReferralLinkStatsMessage(statOpt.get())));
+    }
+
     private Optional<User> findUserByIdentifier(String identifier) {
         if (identifier == null || identifier.isBlank()) return Optional.empty();
         if (identifier.chars().allMatch(Character::isDigit)) {
@@ -256,6 +322,53 @@ public class AdminFlowService {
             }
         }
         return userService.findByUsername(identifier);
+    }
+
+    private String buildReferralStatsMessage(User user, ReferralService.ReferralLinksStats stats) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("📊 Реферальные ссылки ").append(displayUser(user)).append("\n")
+                .append("Всего приглашено: ").append(stats.totalInvitedCount()).append("\n")
+                .append("По обычной ссылке: ").append(stats.regularInvitedCount());
+
+        if (stats.links().isEmpty()) {
+            sb.append("\n\nУникальных ссылок пока нет.");
+            return sb.toString();
+        }
+
+        for (int i = 0; i < stats.links().size(); i++) {
+            ReferralService.TrackedReferralLinkStat link = stats.links().get(i);
+            sb.append("\n\n")
+                    .append(i + 1)
+                    .append(") Пришло: ")
+                    .append(link.invitedCount())
+                    .append("\nСоздана: ")
+                    .append(BotTextUtils.formatDate(link.createdAt()))
+                    .append("\nКод: ")
+                    .append(link.code())
+                    .append("\nСсылка:\n")
+                    .append(referralService.buildReferralUrl(botUsername, link.code()));
+        }
+        return sb.toString();
+    }
+
+    private String buildSingleReferralLinkStatsMessage(ReferralService.TrackedReferralLinkStat link) {
+        return "📊 Статистика реферальной ссылки\n" +
+                "Пришло: " + link.invitedCount() + "\n" +
+                "Создана: " + BotTextUtils.formatDate(link.createdAt()) + "\n" +
+                "Код: " + link.code() + "\n" +
+                "Ссылка:\n" + referralService.buildReferralUrl(botUsername, link.code());
+    }
+
+    private String displayUser(User user) {
+        if (user == null) return "пользователь";
+        String username = user.getUsername();
+        if (username != null && !username.isBlank()) {
+            return username.startsWith("@") ? username : "@" + username;
+        }
+        if (user.getTelegramId() != null) {
+            return "tg_" + user.getTelegramId();
+        }
+        return "user_" + user.getId();
     }
 
     private String normalizeUsername(String raw) {
@@ -271,6 +384,10 @@ public class AdminFlowService {
         String[] parts = raw.trim().split("\\s+");
         if (parts.length == 0) return null;
         return normalizeUsername(parts[0]);
+    }
+
+    private String firstTokenIdentifier(String raw) {
+        return firstTokenUsername(raw);
     }
 
     private Integer parseDays(String raw) {

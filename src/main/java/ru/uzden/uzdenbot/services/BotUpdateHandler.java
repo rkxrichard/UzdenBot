@@ -255,6 +255,22 @@ public class BotUpdateHandler {
                             "Отправьте текст рассылки. Сообщение будет отправлено всем пользователям.\n\nОтмена (или /cancel) — отмена."));
                 }
             }
+            case "ADMIN_CREATE_REF_LINK" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.CREATE_REFERRAL_LINK);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "Отправьте @username или telegram id пользователя, от имени которого нужно создать уникальную реферальную ссылку.\n\nОтмена (или /cancel) — отмена."));
+                }
+            }
+            case "ADMIN_REF_LINK_STATS" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.REFERRAL_LINK_STATS);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "Отправьте @username / telegram id пользователя, чтобы увидеть статистику по его уникальным реферальным ссылкам.\n" +
+                                    "Либо отправьте саму ссылку или код, чтобы посмотреть статистику по одной ссылке.\n\n" +
+                                    "Отмена (или /cancel) — отмена."));
+                }
+            }
             case "ADMIN_PURGE_DISABLED_KEYS" -> {
                 if (isAdmin) {
                     InlineKeyboardButton bYes = InlineKeyboardButton.builder()

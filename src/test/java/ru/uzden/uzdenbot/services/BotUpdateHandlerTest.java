@@ -16,6 +16,7 @@ import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -196,6 +197,49 @@ class BotUpdateHandlerTest {
         assertEquals(2, result.size());
         assertInstanceOf(SendMessage.class, result.get(0));
         assertInstanceOf(AnswerCallbackQuery.class, result.get(1));
+    }
+
+    @Test
+    void adminCanStartCreateReferralLinkFlow() throws Exception {
+        BotMenuService botMenuService = mock(BotMenuService.class);
+        AdminService adminService = mock(AdminService.class);
+        AdminStateService adminStateService = mock(AdminStateService.class);
+        AdminFlowService adminFlowService = mock(AdminFlowService.class);
+        UserService userService = mock(UserService.class);
+        VpnKeyService vpnKeyService = mock(VpnKeyService.class);
+        IdempotencyService idempotencyService = mock(IdempotencyService.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
+        ReferralService referralService = mock(ReferralService.class);
+
+        BotUpdateHandler handler = new BotUpdateHandler(
+                botMenuService,
+                adminService,
+                adminStateService,
+                adminFlowService,
+                userService,
+                vpnKeyService,
+                idempotencyService,
+                paymentService,
+                plans,
+                referralService
+        );
+        setIdempotencyTtl(handler, 10L);
+
+        when(adminService.isAdmin(anyLong())).thenReturn(true);
+        User user = new User();
+        user.setDisabled(false);
+        when(userService.registerOrUpdate(any(org.telegram.telegrambots.meta.api.objects.User.class))).thenReturn(user);
+
+        Update update = callbackUpdate(1L, 100L, "cb4", "ADMIN_CREATE_REF_LINK");
+        List<BotApiMethod<?>> result = handler.handle(update);
+
+        assertEquals(2, result.size());
+        assertInstanceOf(SendMessage.class, result.get(0));
+        assertInstanceOf(AnswerCallbackQuery.class, result.get(1));
+        SendMessage prompt = (SendMessage) result.get(0);
+        assertTrue(prompt.getText().contains("уникальную реферальную ссылку"));
+        verify(adminStateService).set(1L, AdminAction.CREATE_REFERRAL_LINK);
     }
 
     private static Update messageUpdate(long chatId, long userId, String text) {

@@ -126,6 +126,14 @@ public class BotMenuService {
                 .text("📣 Рассылка")
                 .callbackData("ADMIN_BROADCAST")
                 .build();
+        InlineKeyboardButton bCreateReferralLink = InlineKeyboardButton.builder()
+                .text("🔗 Создать реф. ссылку")
+                .callbackData("ADMIN_CREATE_REF_LINK")
+                .build();
+        InlineKeyboardButton bReferralStats = InlineKeyboardButton.builder()
+                .text("📊 Статистика реф. ссылок")
+                .callbackData("ADMIN_REF_LINK_STATS")
+                .build();
         InlineKeyboardButton bRevokeSub = InlineKeyboardButton.builder()
                 .text("🛑 Отключить подписку")
                 .callbackData("ADMIN_REVOKE_SUB")
@@ -153,6 +161,8 @@ public class BotMenuService {
                         List.of(bCheckSub),
                         List.of(bActiveUsers),
                         List.of(bBroadcast),
+                        List.of(bCreateReferralLink),
+                        List.of(bReferralStats),
                         List.of(bRevokeSub),
                         List.of(bDisableUser),
                         List.of(bEnableUser),
