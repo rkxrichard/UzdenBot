@@ -7,6 +7,7 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Chat;
 import org.telegram.telegrambots.meta.api.objects.Message;
+import org.telegram.telegrambots.meta.api.objects.PhotoSize;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import ru.uzden.uzdenbot.config.SubscriptionPlansProperties;
 import ru.uzden.uzdenbot.entities.User;
@@ -242,10 +243,71 @@ class BotUpdateHandlerTest {
         verify(adminStateService).set(1L, AdminAction.CREATE_REFERRAL_LINK);
     }
 
+    @Test
+    void adminBroadcastAcceptsPhotoMessage() throws Exception {
+        BotMenuService botMenuService = mock(BotMenuService.class);
+        AdminService adminService = mock(AdminService.class);
+        AdminStateService adminStateService = mock(AdminStateService.class);
+        AdminFlowService adminFlowService = mock(AdminFlowService.class);
+        UserService userService = mock(UserService.class);
+        VpnKeyService vpnKeyService = mock(VpnKeyService.class);
+        IdempotencyService idempotencyService = mock(IdempotencyService.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
+        ReferralService referralService = mock(ReferralService.class);
+
+        BotUpdateHandler handler = new BotUpdateHandler(
+                botMenuService,
+                adminService,
+                adminStateService,
+                adminFlowService,
+                userService,
+                vpnKeyService,
+                idempotencyService,
+                paymentService,
+                plans,
+                referralService
+        );
+        setIdempotencyTtl(handler, 10L);
+
+        when(adminService.isAdmin(anyLong())).thenReturn(true);
+        when(adminStateService.get(1L)).thenReturn(java.util.Optional.of(AdminAction.BROADCAST));
+        User user = new User();
+        user.setDisabled(false);
+        when(userService.registerOrUpdate(any(org.telegram.telegrambots.meta.api.objects.User.class))).thenReturn(user);
+        SendMessage broadcastResult = SendMessage.builder().chatId("1").text("ok").build();
+        when(adminFlowService.handleAdminMessage(eq(1L), any(Message.class), eq(AdminAction.BROADCAST)))
+                .thenReturn(List.of(broadcastResult));
+
+        Update update = photoMessageUpdate(1L, 100L, "caption");
+        List<BotApiMethod<?>> result = handler.handle(update);
+
+        assertEquals(1, result.size());
+        assertInstanceOf(SendMessage.class, result.get(0));
+        verify(adminFlowService).handleAdminMessage(eq(1L), any(Message.class), eq(AdminAction.BROADCAST));
+    }
+
     private static Update messageUpdate(long chatId, long userId, String text) {
         Update update = new Update();
         Message msg = new Message();
         msg.setText(text);
+        Chat chat = new Chat();
+        chat.setId(chatId);
+        msg.setChat(chat);
+        org.telegram.telegrambots.meta.api.objects.User from = new org.telegram.telegrambots.meta.api.objects.User();
+        from.setId(userId);
+        msg.setFrom(from);
+        update.setMessage(msg);
+        return update;
+    }
+
+    private static Update photoMessageUpdate(long chatId, long userId, String caption) {
+        Update update = new Update();
+        Message msg = new Message();
+        msg.setCaption(caption);
+        PhotoSize photo = new PhotoSize();
+        msg.setPhoto(List.of(photo));
+        msg.setMessageId(77);
         Chat chat = new Chat();
         chat.setId(chatId);
         msg.setChat(chat);

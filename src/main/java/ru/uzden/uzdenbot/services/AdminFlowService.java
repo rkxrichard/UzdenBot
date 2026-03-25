@@ -4,7 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
+import org.telegram.telegrambots.meta.api.methods.CopyMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Message;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.utils.BotMessageFactory;
@@ -28,8 +31,9 @@ public class AdminFlowService {
     @Value("${telegram.bot.username:}")
     private String botUsername;
 
-    public List<SendMessage> handleAdminInput(Long chatId, String text, AdminAction action) {
-        List<SendMessage> out = new ArrayList<>();
+    public List<BotApiMethod<?>> handleAdminMessage(Long chatId, Message message, AdminAction action) {
+        List<BotApiMethod<?>> out = new ArrayList<>();
+        String text = message == null ? null : message.getText();
         String trimmed = text == null ? "" : text.trim();
         switch (action) {
             case ADD_SUBSCRIPTION -> handleAddSubscription(chatId, trimmed, out);
@@ -37,7 +41,7 @@ public class AdminFlowService {
             case REVOKE_SUBSCRIPTION -> handleRevokeSubscription(chatId, trimmed, out);
             case DISABLE_USER -> handleDisableUser(chatId, trimmed, out);
             case ENABLE_USER -> handleEnableUser(chatId, trimmed, out);
-            case BROADCAST -> handleBroadcast(chatId, text, out);
+            case BROADCAST -> handleBroadcast(chatId, message, out);
             case CREATE_REFERRAL_LINK -> handleCreateReferralLink(chatId, trimmed, out);
             case REFERRAL_LINK_STATS -> handleReferralLinkStats(chatId, trimmed, out);
             case RESET_REFERRAL_LINK_COUNTER -> handleResetReferralLinkCounter(chatId, trimmed, out);
@@ -92,7 +96,7 @@ public class AdminFlowService {
         return daysLeft + " " + word;
     }
 
-    private void handleAddSubscription(Long chatId, String text, List<SendMessage> out) {
+    private void handleAddSubscription(Long chatId, String text, List<BotApiMethod<?>> out) {
         String[] parts = text.split("\\s+");
         if (parts.length < 2) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username и число дней, например: @user 30"));
@@ -127,7 +131,7 @@ public class AdminFlowService {
                 "\nКлюч: " + keyLabel));
     }
 
-    private void handleCheckSubscription(Long chatId, String text, List<SendMessage> out) {
+    private void handleCheckSubscription(Long chatId, String text, List<BotApiMethod<?>> out) {
         String username = firstTokenUsername(text);
         if (username == null) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username."));
@@ -170,7 +174,7 @@ public class AdminFlowService {
         adminStateService.clear(chatId);
     }
 
-    private void handleRevokeSubscription(Long chatId, String text, List<SendMessage> out) {
+    private void handleRevokeSubscription(Long chatId, String text, List<BotApiMethod<?>> out) {
         String username = firstTokenUsername(text);
         if (username == null) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username."));
@@ -190,7 +194,7 @@ public class AdminFlowService {
         }
     }
 
-    private void handleDisableUser(Long chatId, String text, List<SendMessage> out) {
+    private void handleDisableUser(Long chatId, String text, List<BotApiMethod<?>> out) {
         String username = firstTokenUsername(text);
         if (username == null) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username."));
@@ -211,7 +215,7 @@ public class AdminFlowService {
         out.add(BotMessageFactory.simpleMessage(chatId, "🚫 Пользователь отключён."));
     }
 
-    private void handleEnableUser(Long chatId, String text, List<SendMessage> out) {
+    private void handleEnableUser(Long chatId, String text, List<BotApiMethod<?>> out) {
         String username = firstTokenUsername(text);
         if (username == null) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username."));
@@ -227,11 +231,15 @@ public class AdminFlowService {
         out.add(BotMessageFactory.simpleMessage(chatId, "✅ Пользователь включён."));
     }
 
-    private void handleBroadcast(Long chatId, String text, List<SendMessage> out) {
-        String message = text == null ? "" : text.trim();
-        if (message.isBlank()) {
+    private void handleBroadcast(Long chatId, Message message, List<BotApiMethod<?>> out) {
+        if (message == null || message.getChatId() == null || message.getMessageId() == null) {
             out.add(BotMessageFactory.simpleMessage(chatId,
-                    "Текст рассылки пуст. Отправьте сообщение текстом.\n\n/cancel — отмена."));
+                    "Не удалось прочитать сообщение для рассылки. Попробуйте ещё раз."));
+            return;
+        }
+        if (!message.hasText() && !message.hasPhoto() && !message.hasVideo()) {
+            out.add(BotMessageFactory.simpleMessage(chatId,
+                    "Поддерживаются текст, фото и видео.\n\n/cancel — отмена."));
             return;
         }
 
@@ -246,7 +254,11 @@ public class AdminFlowService {
         for (User u : users) {
             Long telegramId = u.getTelegramId();
             if (telegramId == null) continue;
-            out.add(BotMessageFactory.simpleMessage(telegramId, message));
+            out.add(CopyMessage.builder()
+                    .chatId(telegramId.toString())
+                    .fromChatId(message.getChatId().toString())
+                    .messageId(message.getMessageId())
+                    .build());
             delivered++;
         }
 
@@ -255,7 +267,7 @@ public class AdminFlowService {
                 "📣 Рассылка отправлена: " + delivered + " пользователей."));
     }
 
-    private void handleCreateReferralLink(Long chatId, String text, List<SendMessage> out) {
+    private void handleCreateReferralLink(Long chatId, String text, List<BotApiMethod<?>> out) {
         String identifier = firstTokenIdentifier(text);
         if (identifier == null) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username или telegram id пользователя."));
@@ -283,7 +295,7 @@ public class AdminFlowService {
                         "Ссылка:\n" + url));
     }
 
-    private void handleReferralLinkStats(Long chatId, String text, List<SendMessage> out) {
+    private void handleReferralLinkStats(Long chatId, String text, List<BotApiMethod<?>> out) {
         if (text == null || text.isBlank()) {
             out.add(BotMessageFactory.simpleMessage(chatId,
                     "Отправьте @username / telegram id пользователя или саму ссылку / код."));
@@ -315,7 +327,7 @@ public class AdminFlowService {
         out.add(BotMessageFactory.simpleMessage(chatId, buildSingleReferralLinkStatsMessage(statOpt.get())));
     }
 
-    private void handleResetReferralLinkCounter(Long chatId, String text, List<SendMessage> out) {
+    private void handleResetReferralLinkCounter(Long chatId, String text, List<BotApiMethod<?>> out) {
         if (text == null || text.isBlank()) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Отправьте ссылку или код, чтобы обнулить счётчик."));
             return;
@@ -335,7 +347,7 @@ public class AdminFlowService {
                         "Ссылка:\n" + referralService.buildReferralUrl(botUsername, stat.code())));
     }
 
-    private void handleDeleteReferralLink(Long chatId, String text, List<SendMessage> out) {
+    private void handleDeleteReferralLink(Long chatId, String text, List<BotApiMethod<?>> out) {
         if (text == null || text.isBlank()) {
             out.add(BotMessageFactory.simpleMessage(chatId, "Отправьте ссылку или код, чтобы удалить её."));
             return;

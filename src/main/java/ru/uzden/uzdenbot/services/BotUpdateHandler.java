@@ -44,7 +44,7 @@ public class BotUpdateHandler {
 
     public List<BotApiMethod<?>> handle(Update update) {
         if (update == null) return List.of();
-        if (update.hasMessage() && update.getMessage().hasText()) {
+        if (update.hasMessage()) {
             return handleMessage(update);
         }
         if (update.hasCallbackQuery()) {
@@ -55,9 +55,10 @@ public class BotUpdateHandler {
 
     private List<BotApiMethod<?>> handleMessage(Update update) {
         List<BotApiMethod<?>> out = new ArrayList<>();
-        String text = update.getMessage().getText();
-        Long chatId = update.getMessage().getChatId();
-        var from = update.getMessage().getFrom();
+        var message = update.getMessage();
+        String text = message.getText();
+        Long chatId = message.getChatId();
+        var from = message.getFrom();
         boolean isAdmin = adminService.isAdmin(from.getId());
 
         User user = userService.registerOrUpdate(from);
@@ -79,7 +80,12 @@ public class BotUpdateHandler {
                     out.add(BotMessageFactory.simpleMessage(chatId, "✅ Действие отменено."));
                     return out;
                 }
-                List<SendMessage> adminResponses = adminFlowService.handleAdminInput(chatId, text, pending.get());
+                if (!message.hasText() && pending.get() != AdminAction.BROADCAST) {
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "Для этого действия отправьте текст.\n\nОтмена (или /cancel) — отмена."));
+                    return out;
+                }
+                List<BotApiMethod<?>> adminResponses = adminFlowService.handleAdminMessage(chatId, message, pending.get());
                 out.addAll(adminResponses);
                 return out;
             }
@@ -252,7 +258,9 @@ public class BotUpdateHandler {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.BROADCAST);
                     out.add(BotMessageFactory.simpleMessage(chatId,
-                            "Отправьте текст рассылки. Сообщение будет отправлено всем пользователям.\n\nОтмена (или /cancel) — отмена."));
+                            "Отправьте сообщение для рассылки: текст, фото или видео.\n" +
+                                    "Для фото и видео можно добавить подпись.\n\n" +
+                                    "Отмена (или /cancel) — отмена."));
                 }
             }
             case "ADMIN_CREATE_REF_LINK" -> {
