@@ -59,7 +59,7 @@ public class VpnKey {
      * ID inbound в 3x-ui.
      */
     @Column(name = "inbound_id", nullable = false)
-    private Long inboundId = 3L;
+    private Long inboundId = 1L;
 
     /**
      * UUID клиента (clients[].id) — главный идентификатор клиента в 3x-ui.

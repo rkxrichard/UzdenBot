@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import ru.uzden.uzdenbot.config.XuiProperties;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.entities.Subscription;
@@ -50,10 +51,7 @@ public class VpnKeyService {
             ThreeXuiClient xuiClient,
             VlessLinkBuilder linkBuilder,
             TransactionTemplate tx,
-            @Value("${xui.inbound-id:3}") Long inbound,
-            @Value("${xui.public-host:62.60.229.102}") String publicHost,
-            @Value("${xui.public-port:8441}") int publicPort,
-            @Value("${xui.link-tag:reality443-auto}") String linkTag,
+            XuiProperties xuiProperties,
             @Value("${xui.link-group:}") String linkGroup) {
         this.vpnKeyRepository = vpnKeyRepository;
         this.userRepository = userRepository;
@@ -62,10 +60,10 @@ public class VpnKeyService {
         this.xuiClient = xuiClient;
         this.linkBuilder = linkBuilder;
         this.tx = tx;
-        this.inbound = inbound;
-        this.publicHost = publicHost;
-        this.publicPort = publicPort;
-        this.linkTag = linkTag;
+        this.inbound = xuiProperties.inboundId();
+        this.publicHost = xuiProperties.publicHost();
+        this.publicPort = xuiProperties.publicPort();
+        this.linkTag = xuiProperties.linkTag();
         this.linkGroup = linkGroup;
     }
 
