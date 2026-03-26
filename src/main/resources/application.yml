@@ -104,14 +104,14 @@ telegram:
 
 xui:
   # новые ключи выпускаются в этот inbound
-  inbound-id: 1
+  inbound-id: 4
   public-host: 62.60.229.102
-  public-port: 443
+  public-port: 8443
   link-tag: "reality443-auto"
   link-group: WayGuard
   reality-sni: web.max.ru
   reality-target: web.max.ru:443
-  reality-public-key: 4LzYg8A6u5IN6VliHr6dcyQurE7HZSPSah5Zf3HrGV8
+  reality-public-key: NcLdVzwDsWwz2cfbdSHG3q57_pp8sCkBAscwCbVsfUo
   # base-url: ${XUI_BASE_URL}
   # base-path: ${XUI_BASE_PATH}
   # username: ${XUI_USERNAME}
