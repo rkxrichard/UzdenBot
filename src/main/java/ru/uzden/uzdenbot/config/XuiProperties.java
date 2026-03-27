@@ -9,8 +9,11 @@ public record XuiProperties(
         String username,
         String password,
         long inboundId,
+        long xhttpInboundId,
         String publicHost,
         int publicPort,
+        int xhttpPort,
         String linkTag,
+        String xhttpLinkTag,
         String realityPublicKey
 ) {}

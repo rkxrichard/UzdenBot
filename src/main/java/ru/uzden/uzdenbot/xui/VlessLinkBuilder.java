@@ -7,10 +7,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Строит vless:// ссылку для Reality (3x-ui 2.8.9).
+ * Строит vless:// ссылку для inbounds 3x-ui.
  *
- * 3x-ui хранит streamSettings/settings как JSON-строки, а realitySettings
- * может лежать строкой внутри streamSettings, поэтому распаковываем уровни.
+ * Сейчас поддержаны варианты, которые используются в проекте:
+ * Reality over TCP и Reality over XHTTP.
  */
 @Component
 public class VlessLinkBuilder {
@@ -31,17 +31,17 @@ public class VlessLinkBuilder {
         this.linkGroup = linkGroup;
     }
 
-    public String buildRealityLink(
+    public String buildLink(
             String inboundJson,
             String publicHost,
             int publicPort,
             java.util.UUID clientUuid,
             String linkTag
     ) {
-        return buildRealityLink(inboundJson, publicHost, publicPort, clientUuid.toString(), linkTag);
+        return buildLink(inboundJson, publicHost, publicPort, clientUuid.toString(), linkTag);
     }
 
-    public String buildRealityLink(
+    public String buildLink(
             String inboundJson,
             String publicHost,
             int publicPort,
@@ -65,49 +65,18 @@ public class VlessLinkBuilder {
             String settings = JsonMini.unquoteIfString(
                     JsonMini.extractFieldValue(inbound, "settings")
             );
-
-            String pbk = firstNonBlank(
-                    stringField(realitySettings, "publicKey"),
-                    stringField(streamSettings, "publicKey"),
-                    fallbackPublicKey
+            String network = firstNonBlank(
+                    stringField(streamSettings, "network"),
+                    "tcp"
             );
-
-            if (pbk == null || pbk.isBlank()) {
-                throw new IllegalStateException("reality publicKey not found (checked streamSettings.realitySettings.publicKey and xui.reality-public-key)");
-            }
-
-            String sni = firstNonBlank(
-                    firstArrayItem(realitySettings, "serverNames"),
-                    stringField(realitySettings, "serverName"),
-                    hostFromTarget(stringField(realitySettings, "dest")),
-                    hostFromTarget(stringField(realitySettings, "target")),
-                    fallbackSni,
-                    hostFromTarget(fallbackTarget)
-            );
-
-            if (sni == null || sni.isBlank()) {
-                throw new IllegalStateException("reality serverName/SNI not found");
-            }
-
-            String sid = firstNonBlank(
-                    firstArrayItem(realitySettings, "shortIds"),
-                    "0000"
-            );
-
-            String fp = firstNonBlank(
-                    stringField(realitySettings, "fingerprint"),
-                    stringField(streamSettings, "fingerprint"),
-                    "chrome"
-            );
-
-            String spx = firstNonBlank(
-                    stringField(realitySettings, "spiderX"),
-                    "/"
+            String security = firstNonBlank(
+                    stringField(streamSettings, "security"),
+                    "none"
             );
 
             String flow = firstNonBlank(
                     findClientField(settings, clientUuid, "flow"),
-                    "xtls-rprx-vision"
+                    defaultFlowForNetwork(network)
             );
 
             String encryption = firstNonBlankNotNone(
@@ -122,17 +91,78 @@ public class VlessLinkBuilder {
             );
             if (encryption == null || encryption.isBlank()) encryption = "none";
 
-            // Собираем простую ссылку как в твоём curl-успешном примере
             StringBuilder qs = new StringBuilder();
-            qs.append("type=tcp");
+            qs.append("type=").append(url(network));
             qs.append("&encryption=").append(url(encryption));
-            qs.append("&security=reality");
-            qs.append("&pbk=").append(url(pbk));
-            qs.append("&fp=").append(url(fp));
-            qs.append("&sni=").append(url(sni));
-            qs.append("&sid=").append(url(sid));
-            qs.append("&spx=").append(url(spx));
-            qs.append("&flow=").append(url(flow));
+            if (security != null && !security.isBlank() && !"none".equalsIgnoreCase(security)) {
+                qs.append("&security=").append(url(security));
+            }
+
+            if ("reality".equalsIgnoreCase(security)) {
+                String pbk = firstNonBlank(
+                        stringField(realitySettings, "publicKey"),
+                        stringField(streamSettings, "publicKey"),
+                        fallbackPublicKey
+                );
+                if (pbk == null || pbk.isBlank()) {
+                    throw new IllegalStateException("reality publicKey not found (checked streamSettings.realitySettings.publicKey and xui.reality-public-key)");
+                }
+
+                String sni = firstNonBlank(
+                        firstArrayItem(realitySettings, "serverNames"),
+                        stringField(realitySettings, "serverName"),
+                        hostFromTarget(stringField(realitySettings, "dest")),
+                        hostFromTarget(stringField(realitySettings, "target")),
+                        fallbackSni,
+                        hostFromTarget(fallbackTarget)
+                );
+                if (sni == null || sni.isBlank()) {
+                    throw new IllegalStateException("reality serverName/SNI not found");
+                }
+
+                String sid = firstNonBlank(
+                        firstArrayItem(realitySettings, "shortIds"),
+                        "0000"
+                );
+                String fp = firstNonBlank(
+                        stringField(realitySettings, "fingerprint"),
+                        stringField(streamSettings, "fingerprint"),
+                        "chrome"
+                );
+                String spx = firstNonBlank(
+                        stringField(realitySettings, "spiderX"),
+                        "/"
+                );
+
+                qs.append("&pbk=").append(url(pbk));
+                qs.append("&fp=").append(url(fp));
+                qs.append("&sni=").append(url(sni));
+                qs.append("&sid=").append(url(sid));
+                qs.append("&spx=").append(url(spx));
+            }
+
+            if ("xhttp".equalsIgnoreCase(network)) {
+                String xhttpSettings = JsonMini.unquoteIfString(
+                        JsonMini.extractFieldValue(streamSettings, "xhttpSettings")
+                );
+                String path = firstNonBlank(
+                        stringField(xhttpSettings, "path"),
+                        "/"
+                );
+                String host = stringField(xhttpSettings, "host");
+                String mode = stringField(xhttpSettings, "mode");
+                qs.append("&path=").append(url(path));
+                if (host != null && !host.isBlank()) {
+                    qs.append("&host=").append(url(host));
+                }
+                if (mode != null && !mode.isBlank()) {
+                    qs.append("&mode=").append(url(mode));
+                }
+            }
+
+            if (flow != null && !flow.isBlank()) {
+                qs.append("&flow=").append(url(flow));
+            }
             if (linkGroup != null && !linkGroup.isBlank()) {
                 qs.append("&group=").append(url(linkGroup));
             }
@@ -143,6 +173,26 @@ public class VlessLinkBuilder {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to build VLESS Reality link", e);
         }
+    }
+
+    public String buildRealityLink(
+            String inboundJson,
+            String publicHost,
+            int publicPort,
+            java.util.UUID clientUuid,
+            String linkTag
+    ) {
+        return buildLink(inboundJson, publicHost, publicPort, clientUuid, linkTag);
+    }
+
+    public String buildRealityLink(
+            String inboundJson,
+            String publicHost,
+            int publicPort,
+            String clientUuid,
+            String linkTag
+    ) {
+        return buildLink(inboundJson, publicHost, publicPort, clientUuid, linkTag);
     }
 
     private static String url(String s) {
@@ -168,6 +218,12 @@ public class VlessLinkBuilder {
             if (v != null && !v.isBlank() && !"none".equalsIgnoreCase(v)) return v;
         }
         return null;
+    }
+
+    private static String defaultFlowForNetwork(String network) {
+        if (network == null) return "xtls-rprx-vision";
+        if ("xhttp".equalsIgnoreCase(network)) return "";
+        return "xtls-rprx-vision";
     }
 
     private static String stringField(String json, String field) {

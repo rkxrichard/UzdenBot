@@ -35,9 +35,12 @@ public class VpnKeyService {
     private final TransactionTemplate tx;
 
     private final Long inbound;
+    private final Long xhttpInbound;
     private final String publicHost;
     private final int publicPort;
+    private final int xhttpPort;
     private final String linkTag;
+    private final String xhttpLinkTag;
     private final String linkGroup;
 
     private static final int MAX_KEYS_PER_USER = 3;
@@ -61,9 +64,12 @@ public class VpnKeyService {
         this.linkBuilder = linkBuilder;
         this.tx = tx;
         this.inbound = xuiProperties.inboundId();
+        this.xhttpInbound = xuiProperties.xhttpInboundId();
         this.publicHost = xuiProperties.publicHost();
         this.publicPort = xuiProperties.publicPort();
+        this.xhttpPort = xuiProperties.xhttpPort();
         this.linkTag = xuiProperties.linkTag();
+        this.xhttpLinkTag = xuiProperties.xhttpLinkTag();
         this.linkGroup = linkGroup;
     }
 
@@ -430,7 +436,8 @@ public class VpnKeyService {
             ensureKeyLimit(userId);
         }
 
-        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId));
+        Long targetInbound = old == null ? inbound : resolveReplacementInbound(old.getInboundId());
+        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId, targetInbound));
         return new ReplaceContext(
                 pending.getId(),
                 old == null ? null : old.getInboundId(),
@@ -457,7 +464,7 @@ public class VpnKeyService {
         vpnKeyRepository.save(old);
         vpnKeyRepository.flush();
 
-        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId));
+        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId, resolveReplacementInbound(old.getInboundId())));
 
         Subscription activeSub = subscriptionRepository
                 .findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(old, java.time.LocalDateTime.now())
@@ -476,10 +483,14 @@ public class VpnKeyService {
     }
 
     private VpnKey buildPendingKey(Long userId) {
+        return buildPendingKey(userId, inbound);
+    }
+
+    private VpnKey buildPendingKey(Long userId, Long targetInbound) {
         VpnKey pending = new VpnKey();
         User userRef = userRepository.getReferenceById(userId);
         pending.setUser(userRef);
-        pending.setInboundId(inbound);
+        pending.setInboundId(targetInbound == null ? inbound : targetInbound);
 
         UUID clientUuid = UUID.randomUUID();
         pending.setClientUuid(clientUuid);
@@ -634,14 +645,15 @@ public class VpnKeyService {
 
             // 2) берём inbound json (твой inbound содержит streamSettings/settings)
             String inboundJson = xuiClient.getInbound(key.getInboundId());
+            LinkOptions linkOptions = resolveLinkOptions(key.getInboundId());
 
             // 3) строим ссылку vless://... на основе inbound
-            String vlessLink = linkBuilder.buildRealityLink(
+            String vlessLink = linkBuilder.buildLink(
                     inboundJson,
-                    publicHost,
-                    publicPort,
+                    linkOptions.host,
+                    linkOptions.port,
                     key.getClientUuid(),
-                    linkTag
+                    linkOptions.tag
             );
 
             // 4) финализируем в БД
@@ -674,7 +686,8 @@ public class VpnKeyService {
         if (v == null || v.isBlank()) return false;
         if (!v.startsWith("vless://")) return false;
         if (v.contains("encryption=none") || !v.contains("encryption=")) return true;
-        String expectedTag = encodeFragment((linkTag == null || linkTag.isBlank()) ? "vpn" : linkTag);
+        LinkOptions linkOptions = resolveLinkOptions(key.getInboundId());
+        String expectedTag = encodeFragment((linkOptions.tag == null || linkOptions.tag.isBlank()) ? "vpn" : linkOptions.tag);
         String currentTag = extractFragment(v);
         if (currentTag == null || !currentTag.equals(expectedTag)) return true;
         return !hasExpectedGroup(v);
@@ -683,12 +696,13 @@ public class VpnKeyService {
     private VpnKey refreshActiveLink(VpnKey key) {
         try {
             String inboundJson = xuiClient.getInbound(key.getInboundId());
-            String vlessLink = linkBuilder.buildRealityLink(
+            LinkOptions linkOptions = resolveLinkOptions(key.getInboundId());
+            String vlessLink = linkBuilder.buildLink(
                     inboundJson,
-                    publicHost,
-                    publicPort,
+                    linkOptions.host,
+                    linkOptions.port,
                     key.getClientUuid(),
-                    linkTag
+                    linkOptions.tag
             );
             if (!vlessLink.equals(key.getKeyValue())) {
                 return tx.execute(status -> activateTx(key.getId(), vlessLink));
@@ -709,6 +723,41 @@ public class VpnKeyService {
         if (linkGroup == null || linkGroup.isBlank()) return true;
         String expected = "group=" + encodeQuery(linkGroup);
         return url.contains(expected);
+    }
+
+    private Long resolveReplacementInbound(Long currentInbound) {
+        if (currentInbound == null) {
+            return inbound;
+        }
+        if (xhttpInbound == null || xhttpInbound <= 0 || xhttpInbound.equals(inbound)) {
+            return inbound;
+        }
+        if (currentInbound.equals(inbound)) {
+            return xhttpInbound;
+        }
+        if (currentInbound.equals(xhttpInbound)) {
+            return inbound;
+        }
+        return xhttpInbound;
+    }
+
+    private LinkOptions resolveLinkOptions(Long inboundId) {
+        if (inboundId != null && inboundId.equals(xhttpInbound)) {
+            return new LinkOptions(publicHost, xhttpPort, xhttpLinkTag);
+        }
+        return new LinkOptions(publicHost, publicPort, linkTag);
+    }
+
+    private static final class LinkOptions {
+        final String host;
+        final int port;
+        final String tag;
+
+        private LinkOptions(String host, int port, String tag) {
+            this.host = host;
+            this.port = port;
+            this.tag = tag;
+        }
     }
 
     private String encodeQuery(String s) {

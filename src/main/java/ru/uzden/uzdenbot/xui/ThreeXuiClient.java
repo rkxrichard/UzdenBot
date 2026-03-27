@@ -132,7 +132,8 @@ public class ThreeXuiClient {
 
         // settings={"clients":[{...}]}
         String subId = randomSubId(16);
-        String settingsJson = buildAddClientSettingsJson(clientUuid.toString(), email, subId);
+        String inboundJson = getInbound(inboundId);
+        String settingsJson = buildAddClientSettingsJson(clientUuid.toString(), email, subId, inboundJson);
 
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("id", String.valueOf(inboundId));
@@ -503,11 +504,12 @@ public class ThreeXuiClient {
         return sb.toString();
     }
 
-    private static String buildAddClientSettingsJson(String uuid, String email, String subId) {
+    private static String buildAddClientSettingsJson(String uuid, String email, String subId, String inboundJson) {
+        String flow = resolveDefaultFlow(inboundJson);
         // максимально похоже на то, что шлёт панель (минимально нужные поля)
         return "{\"clients\":[{"
                 + "\"id\":\"" + escapeJson(uuid) + "\","
-                + "\"flow\":\"xtls-rprx-vision\","
+                + "\"flow\":\"" + escapeJson(flow) + "\","
                 + "\"email\":\"" + escapeJson(email) + "\","
                 + "\"limitIp\":0,"
                 + "\"totalGB\":0,"
@@ -516,6 +518,28 @@ public class ThreeXuiClient {
                 + "\"subId\":\"" + escapeJson(subId) + "\","
                 + "\"reset\":0"
                 + "}]}";
+    }
+
+    private static String resolveDefaultFlow(String inboundJson) {
+        if (inboundJson == null || inboundJson.isBlank()) {
+            return "xtls-rprx-vision";
+        }
+        String inbound = JsonMini.unquoteIfString(inboundJson);
+        String streamSettings = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "streamSettings"));
+        String network = JsonMini.unquoteIfString(JsonMini.extractFieldValue(streamSettings, "network"));
+        if ("xhttp".equalsIgnoreCase(network)) {
+            return "";
+        }
+        String settings = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "settings"));
+        String existingFlow = findFirstClientFlow(settings);
+        return (existingFlow == null || existingFlow.isBlank()) ? "xtls-rprx-vision" : existingFlow;
+    }
+
+    private static String findFirstClientFlow(String settingsJson) {
+        if (settingsJson == null || settingsJson.isBlank()) return null;
+        Pattern p = Pattern.compile("\"flow\"\\s*:\\s*\"([^\"]*)\"");
+        Matcher m = p.matcher(settingsJson);
+        return m.find() ? m.group(1) : null;
     }
 
     private static String escapeJson(String s) {

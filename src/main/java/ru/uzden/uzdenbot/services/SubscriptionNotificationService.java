@@ -6,9 +6,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import ru.uzden.uzdenbot.bots.MainBot;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.repositories.SubscriptionRepository;
 import ru.uzden.uzdenbot.utils.BotTextUtils;
 
@@ -52,10 +55,22 @@ public class SubscriptionNotificationService {
         String msg = title + "\n" +
                 "🗓 Действует до: " + until + "\n" +
                 "Продлите в разделе «Мои ключи».";
+        VpnKey key = sub.getVpnKey();
+        String callbackData = (key != null && key.getId() != null)
+                ? "KEY_RENEW:" + key.getId()
+                : "MENU_SUBSCRIPTION";
+        InlineKeyboardButton renewButton = InlineKeyboardButton.builder()
+                .text("🔁 Продлить подписку")
+                .callbackData(callbackData)
+                .build();
+        InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
+                .keyboard(List.of(List.of(renewButton)))
+                .build();
         try {
             SendMessage sm = SendMessage.builder()
                     .chatId(user.getTelegramId().toString())
                     .text(msg)
+                    .replyMarkup(markup)
                     .build();
             mainBot.execute(sm);
             return true;
