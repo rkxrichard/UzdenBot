@@ -317,17 +317,13 @@ public class AdminFlowService {
         User user = userOpt.get();
         try {
             VpnKey key = vpnKeyService.issueRuEuKey(user);
-            boolean hasActiveSubscription = subscriptionService.getActiveSubscription(user).isPresent();
-
             adminStateService.clear(chatId);
             out.add(BotMessageFactory.simpleMessage(chatId,
                     "🌉 RU+EU ключ создан.\n" +
                             "Пользователь: " + displayUser(user) + "\n" +
                             "Ключ ID: " + key.getId() + "\n" +
                             "Тип: RU+EU\n" +
-                            (hasActiveSubscription
-                                    ? "Пользователь сможет получить его в разделе «Мои ключи»."
-                                    : "У пользователя сейчас нет активной подписки. Ключ создан, но доступ через меню откроется после активации подписки.")));
+                            "Это тестовый ключ без подписки. Пользователь сможет получить его в разделе «Мои ключи»."));
         } catch (Exception e) {
             out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось создать RU+EU ключ: " + e.getMessage()));
         }

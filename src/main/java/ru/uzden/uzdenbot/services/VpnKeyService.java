@@ -107,6 +107,13 @@ public class VpnKeyService {
         return subscriptionService.getActiveSubscription(key);
     }
 
+    public boolean requiresActiveSubscription(VpnKey key) {
+        if (key == null || key.getBackend() == null) {
+            return true;
+        }
+        return key.getBackend() != VpnKey.Backend.RU_EU;
+    }
+
     public boolean canDeleteKey(User user, long keyId) {
         VpnKey key = findKeyForUser(user, keyId);
         return !subscriptionService.hasActiveSubscriptionForKey(key);
@@ -143,7 +150,7 @@ public class VpnKeyService {
 
     public VpnKey getKeyForUser(User user, long keyId) {
         VpnKey key = findKeyForUser(user, keyId);
-        if (!subscriptionService.hasActiveSubscriptionForKey(key)) {
+        if (requiresActiveSubscription(key) && !subscriptionService.hasActiveSubscriptionForKey(key)) {
             throw new IllegalStateException("Нет активной подписки для этого ключа");
         }
 
@@ -470,7 +477,7 @@ public class VpnKeyService {
         if (old.getStatus() == VpnKey.Status.REVOKED || old.isRevoked()) {
             throw new IllegalStateException("Ключ отозван");
         }
-        if (!subscriptionService.hasActiveSubscriptionForKey(old)) {
+        if (requiresActiveSubscription(old) && !subscriptionService.hasActiveSubscriptionForKey(old)) {
             throw new IllegalStateException("Нет активной подписки для этого ключа");
         }
 
@@ -488,11 +495,13 @@ public class VpnKeyService {
         Subscription activeSub = subscriptionRepository
                 .findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(old, java.time.LocalDateTime.now())
                 .orElse(null);
-        if (activeSub == null) {
+        if (activeSub == null && requiresActiveSubscription(old)) {
             throw new IllegalStateException("Нет активной подписки для этого ключа");
         }
-        activeSub.setVpnKey(pending);
-        subscriptionRepository.save(activeSub);
+        if (activeSub != null) {
+            activeSub.setVpnKey(pending);
+            subscriptionRepository.save(activeSub);
+        }
 
         return new ReplaceContext(
                 pending.getId(),

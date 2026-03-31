@@ -483,25 +483,30 @@ public class BotMenuService {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         for (int i = 0; i < keys.size(); i++) {
             VpnKey key = keys.get(i);
+            boolean requiresSubscription = vpnKeyService.requiresActiveSubscription(key);
             InlineKeyboardButton bGet = InlineKeyboardButton.builder()
                     .text("📋 Получить")
                     .callbackData("KEY_GET:" + key.getId())
-                    .build();
-            InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
-                    .text("🔁 Продлить")
-                    .callbackData("KEY_RENEW:" + key.getId())
                     .build();
             InlineKeyboardButton bReplace = InlineKeyboardButton.builder()
                     .text("♻️ Заменить")
                     .callbackData("KEY_REPLACE:" + key.getId())
                     .build();
-            rows.add(List.of(bGet, bRenew));
+            if (requiresSubscription) {
+                InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
+                        .text("🔁 Продлить")
+                        .callbackData("KEY_RENEW:" + key.getId())
+                        .build();
+                rows.add(List.of(bGet, bRenew));
+            } else {
+                rows.add(List.of(bGet, bReplace));
+            }
             if (!subscriptionService.hasActiveSubscriptionForKey(key)) {
                 InlineKeyboardButton bDelete = InlineKeyboardButton.builder()
                         .text("🗑 Удалить")
                         .callbackData("KEY_DELETE:" + key.getId())
                         .build();
-                rows.add(List.of(bReplace, bDelete));
+                rows.add(requiresSubscription ? List.of(bReplace, bDelete) : List.of(bDelete));
             } else {
                 rows.add(List.of(bReplace));
             }
@@ -590,7 +595,9 @@ public class BotMenuService {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
         rows.add(List.of(bGet));
         rows.add(List.of(bReplace));
-        rows.add(List.of(bRenew));
+        if (vpnKeyService.requiresActiveSubscription(target)) {
+            rows.add(List.of(bRenew));
+        }
         if (keySubOpt.isEmpty()) {
             InlineKeyboardButton bDelete = InlineKeyboardButton.builder()
                     .text("🗑 Удалить ключ")
@@ -727,6 +734,9 @@ public class BotMenuService {
     }
 
     private String shortKeyDays(VpnKey key) {
+        if (!vpnKeyService.requiresActiveSubscription(key)) {
+            return "test";
+        }
         Optional<Subscription> active = subscriptionService.getActiveSubscription(key);
         if (active.isPresent()) {
             long days = subscriptionService.getDaysLeft(active.get());
@@ -740,6 +750,9 @@ public class BotMenuService {
     }
 
     private String keyDaysLeftText(VpnKey key) {
+        if (!vpnKeyService.requiresActiveSubscription(key)) {
+            return "тестовый доступ • без подписки";
+        }
         Optional<Subscription> active = subscriptionService.getActiveSubscription(key);
         if (active.isPresent()) {
             long days = subscriptionService.getDaysLeft(active.get());
