@@ -1,11 +1,14 @@
 package ru.uzden.uzdenbot.services;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.RestClient;
+import ru.uzden.uzdenbot.config.RuEuXuiProperties;
 import ru.uzden.uzdenbot.config.XuiProperties;
 import ru.uzden.uzdenbot.entities.User;
 import ru.uzden.uzdenbot.entities.VpnKey;
@@ -30,18 +33,11 @@ public class VpnKeyService {
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
     private final SubscriptionRepository subscriptionRepository;
-    private final ThreeXuiClient xuiClient;
     private final VlessLinkBuilder linkBuilder;
     private final TransactionTemplate tx;
 
-    private final Long inbound;
-    private final Long xhttpInbound;
-    private final String publicHost;
-    private final int publicPort;
-    private final int xhttpPort;
-    private final String linkTag;
-    private final String xhttpLinkTag;
-    private final String linkGroup;
+    private final BackendRuntime defaultBackend;
+    private final BackendRuntime ruEuBackend;
 
     private static final int MAX_KEYS_PER_USER = 3;
 
@@ -55,22 +51,24 @@ public class VpnKeyService {
             VlessLinkBuilder linkBuilder,
             TransactionTemplate tx,
             XuiProperties xuiProperties,
+            RuEuXuiProperties ruEuXuiProperties,
+            RestClient.Builder restClientBuilder,
+            ObjectMapper objectMapper,
             @Value("${xui.link-group:}") String linkGroup) {
         this.vpnKeyRepository = vpnKeyRepository;
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
         this.subscriptionRepository = subscriptionRepository;
-        this.xuiClient = xuiClient;
         this.linkBuilder = linkBuilder;
         this.tx = tx;
-        this.inbound = xuiProperties.inboundId();
-        this.xhttpInbound = xuiProperties.xhttpInboundId();
-        this.publicHost = xuiProperties.publicHost();
-        this.publicPort = xuiProperties.publicPort();
-        this.xhttpPort = xuiProperties.xhttpPort();
-        this.linkTag = xuiProperties.linkTag();
-        this.xhttpLinkTag = xuiProperties.xhttpLinkTag();
-        this.linkGroup = linkGroup;
+        this.defaultBackend = buildBackendRuntime(VpnKey.Backend.DEFAULT, xuiProperties, xuiClient, linkGroup);
+        if (ruEuXuiProperties != null && ruEuXuiProperties.configured()) {
+            XuiProperties ruEuResolved = ruEuXuiProperties.toXuiProperties();
+            ThreeXuiClient ruEuClient = new ThreeXuiClient(restClientBuilder, ruEuResolved, objectMapper);
+            this.ruEuBackend = buildBackendRuntime(VpnKey.Backend.RU_EU, ruEuResolved, ruEuClient, linkGroup);
+        } else {
+            this.ruEuBackend = null;
+        }
     }
 
     public int getMaxKeysPerUser() {
@@ -134,7 +132,7 @@ public class VpnKeyService {
 
         if (ctx.oldInboundId != null && ctx.oldClientUuid != null) {
             try {
-                xuiClient.disableClient(ctx.oldInboundId, ctx.oldClientUuid);
+                clientFor(ctx.oldBackend).disableClient(ctx.oldInboundId, ctx.oldClientUuid);
             } catch (Exception e) {
                 log.error("Не удалось выключить старый ключ клиента: inbound:{}, uuid:{}", ctx.oldInboundId, ctx.oldClientUuid, e);
             }
@@ -163,7 +161,16 @@ public class VpnKeyService {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("User is required");
         }
-        return tx.execute(status -> createNewPendingKeyTx(user.getId()));
+        return tx.execute(status -> createNewPendingKeyTx(user.getId(), VpnKey.Backend.DEFAULT));
+    }
+
+    public VpnKey issueRuEuKey(User user) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is required");
+        }
+        ensureBackendConfigured(VpnKey.Backend.RU_EU);
+        VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId(), VpnKey.Backend.RU_EU));
+        return finalizeIssueOutsideTx(key.getId());
     }
 
     public void revokeKeyForUser(User user, long keyId) {
@@ -176,7 +183,7 @@ public class VpnKeyService {
         }
 
         try {
-            xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+            clientFor(key.getBackend()).disableClient(key.getInboundId(), key.getClientUuid());
         } catch (Exception e) {
             log.error("Не удалось выключить ключ клиента: inbound:{}, uuid:{}", key.getInboundId(), key.getClientUuid());
             tx.execute(s -> markErrorTx(key.getId(), "disable failed: " + safeMsg(e)));
@@ -189,7 +196,7 @@ public class VpnKeyService {
      * Устойчиво: PENDING -> (3x-ui) -> ACTIVE, при ошибке FAILED.
      */
     public VpnKey issueKey(User user) {
-        VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId()));
+        VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId(), VpnKey.Backend.DEFAULT));
         return finalizeIssueOutsideTx(key.getId());
     }
 
@@ -198,7 +205,7 @@ public class VpnKeyService {
      * Уменьшает риск ошибки "no active transaction" в фоновом обработчике.
      */
     public VpnKey issueKeyAuto(User user) {
-        VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId()));
+        VpnKey key = tx.execute(status -> createNewPendingKeyTx(user.getId(), VpnKey.Backend.DEFAULT));
         return finalizeIssueOutsideTx(key.getId());
     }
 
@@ -211,7 +218,7 @@ public class VpnKeyService {
         if (key == null) return;
 
         try {
-            xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+            clientFor(key.getBackend()).disableClient(key.getInboundId(), key.getClientUuid());
         } catch (Exception e) {
             log.error("Не удалось выключить ключ клиента: inbound:{}, uuid:{}", key.getInboundId(), key.getClientUuid());
             tx.execute(s -> markErrorTx(key.getId(), "disable failed: " + safeMsg(e)));
@@ -234,7 +241,7 @@ public class VpnKeyService {
             });
             try {
                 if (key.getInboundId() != null && key.getClientUuid() != null) {
-                    xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                    clientFor(key.getBackend()).disableClient(key.getInboundId(), key.getClientUuid());
                 }
             } catch (Exception e) {
                 log.warn("Не удалось выключить ключ клиента keyId={}: {}", key.getId(), safeMsg(e));
@@ -255,7 +262,7 @@ public class VpnKeyService {
 
         if (ctx.oldInboundId != null && ctx.oldClientUuid != null) {
             try {
-                xuiClient.disableClient(ctx.oldInboundId, ctx.oldClientUuid);
+                clientFor(ctx.oldBackend).disableClient(ctx.oldInboundId, ctx.oldClientUuid);
             } catch (Exception e) {
                 log.error("Не удалось выключить старый ключ клиента: inbound:{}, uuid:{}", ctx.oldInboundId, ctx.oldClientUuid, e);
             }
@@ -272,7 +279,7 @@ public class VpnKeyService {
         VpnKey key = tx.execute(status -> revokeByIdTx(vpnKeyId));
 
         try {
-            xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+            clientFor(key.getBackend()).disableClient(key.getInboundId(), key.getClientUuid());
         } catch (Exception e) {
             log.error("Не удалось выключить ключ клиента: inbound:{}, uuid:{}", key.getInboundId(), key.getClientUuid());
             tx.execute(s -> markErrorTx(key.getId(), "disable failed: " + safeMsg(e)));
@@ -312,7 +319,7 @@ public class VpnKeyService {
         for (VpnKey key : revoked) {
             try {
                 if (key.getInboundId() != null && key.getClientUuid() != null) {
-                    xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                    clientFor(key.getBackend()).disableClient(key.getInboundId(), key.getClientUuid());
                 }
             } catch (Exception e) {
                 log.warn("Не удалось выключить клиента keyId={}: {}", key.getId(), safeMsg(e));
@@ -337,7 +344,7 @@ public class VpnKeyService {
                 for (VpnKey key : keys) {
                     try {
                         if (key.getInboundId() != null && key.getClientUuid() != null) {
-                            xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                            clientFor(key.getBackend()).disableClient(key.getInboundId(), key.getClientUuid());
                         }
                     } catch (Exception e) {
                         log.warn("Не удалось выключить ключ клиента keyId={}: {}", key.getId(), safeMsg(e));
@@ -361,10 +368,10 @@ public class VpnKeyService {
      * ==========================================================
      */
 
-    private VpnKey createNewPendingKeyTx(Long userId) {
+    private VpnKey createNewPendingKeyTx(Long userId, VpnKey.Backend backend) {
         userRepository.lockUser(userId);
         ensureKeyLimit(userId);
-        return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
+        return vpnKeyRepository.saveAndFlush(buildPendingKey(userId, backend));
     }
 
     private Void ensureKeyForActiveSubscriptionTx(Long userId) {
@@ -377,10 +384,14 @@ public class VpnKeyService {
             return null;
         }
 
-        VpnKey key = vpnKeyRepository.findFirstNonRevoked(userId).orElse(null);
+        VpnKey key = vpnKeyRepository.findUserKeys(userId).stream()
+                .filter(existing -> existing.getBackend() == VpnKey.Backend.DEFAULT)
+                .findFirst()
+                .or(() -> vpnKeyRepository.findFirstNonRevoked(userId))
+                .orElse(null);
         if (key == null) {
             ensureKeyLimit(userId);
-            key = vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
+            key = vpnKeyRepository.saveAndFlush(buildPendingKey(userId, VpnKey.Backend.DEFAULT));
         }
 
         for (ru.uzden.uzdenbot.entities.Subscription sub : unassigned) {
@@ -399,7 +410,7 @@ public class VpnKeyService {
 
         try {
             ensureKeyLimit(userId);
-            return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
+            return vpnKeyRepository.saveAndFlush(buildPendingKey(userId, VpnKey.Backend.DEFAULT));
         } catch (DataIntegrityViolationException e) {
             // Кто-то параллельно успел создать PENDING/ACTIVE
             return vpnKeyRepository.findActiveOrPending(userId)
@@ -416,7 +427,7 @@ public class VpnKeyService {
 
         try {
             ensureKeyLimit(userId);
-            return vpnKeyRepository.saveAndFlush(buildPendingKey(userId));
+            return vpnKeyRepository.saveAndFlush(buildPendingKey(userId, VpnKey.Backend.DEFAULT));
         } catch (DataIntegrityViolationException e) {
             return vpnKeyRepository.findActiveOrPending(userId)
                     .orElseThrow(() -> e);
@@ -436,10 +447,14 @@ public class VpnKeyService {
             ensureKeyLimit(userId);
         }
 
-        Long targetInbound = old == null ? inbound : resolveReplacementInbound(old.getInboundId());
-        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId, targetInbound));
+        VpnKey.Backend backend = old == null ? VpnKey.Backend.DEFAULT : old.getBackend();
+        Long targetInbound = old == null
+                ? backendConfig(backend).inbound()
+                : resolveReplacementInbound(backend, old.getInboundId());
+        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId, backend, targetInbound));
         return new ReplaceContext(
                 pending.getId(),
+                old == null ? null : old.getBackend(),
                 old == null ? null : old.getInboundId(),
                 old == null ? null : old.getClientUuid()
         );
@@ -464,7 +479,11 @@ public class VpnKeyService {
         vpnKeyRepository.save(old);
         vpnKeyRepository.flush();
 
-        VpnKey pending = vpnKeyRepository.save(buildPendingKey(userId, resolveReplacementInbound(old.getInboundId())));
+        VpnKey pending = vpnKeyRepository.save(buildPendingKey(
+                userId,
+                old.getBackend(),
+                resolveReplacementInbound(old.getBackend(), old.getInboundId())
+        ));
 
         Subscription activeSub = subscriptionRepository
                 .findTopByVpnKeyAndEndDateAfterOrderByEndDateDesc(old, java.time.LocalDateTime.now())
@@ -477,20 +496,23 @@ public class VpnKeyService {
 
         return new ReplaceContext(
                 pending.getId(),
+                old.getBackend(),
                 old.getInboundId(),
                 old.getClientUuid()
         );
     }
 
-    private VpnKey buildPendingKey(Long userId) {
-        return buildPendingKey(userId, inbound);
+    private VpnKey buildPendingKey(Long userId, VpnKey.Backend backend) {
+        return buildPendingKey(userId, backend, backendConfig(backend).inbound());
     }
 
-    private VpnKey buildPendingKey(Long userId, Long targetInbound) {
+    private VpnKey buildPendingKey(Long userId, VpnKey.Backend backend, Long targetInbound) {
+        BackendRuntime backendRuntime = backendConfig(backend);
         VpnKey pending = new VpnKey();
         User userRef = userRepository.getReferenceById(userId);
         pending.setUser(userRef);
-        pending.setInboundId(targetInbound == null ? inbound : targetInbound);
+        pending.setBackend(backend);
+        pending.setInboundId(targetInbound == null ? backendRuntime.inbound() : targetInbound);
 
         UUID clientUuid = UUID.randomUUID();
         pending.setClientUuid(clientUuid);
@@ -502,7 +524,8 @@ public class VpnKeyService {
         // В 3x-ui поле email должно быть уникальным внутри inbound.
         // Поэтому добавляем кусок uuid, чтобы повторная/параллельная выдача не падала Duplicate email.
         String shortUuid = clientUuid.toString().substring(0, 8);
-        String identity = (uname == null) ? "tg_" + tg : "tg_" + uname + "_" + tg;
+        String prefix = backend == VpnKey.Backend.RU_EU ? "rueu_tg_" : "tg_";
+        String identity = (uname == null) ? prefix + tg : prefix + uname + "_" + tg;
         pending.setClientEmail(identity + "_" + shortUuid);
         pending.setStatus(VpnKey.Status.PENDING);
         pending.setRevoked(false);
@@ -520,11 +543,13 @@ public class VpnKeyService {
 
     private static final class ReplaceContext {
         final long newKeyId;
+        final VpnKey.Backend oldBackend;
         final Long oldInboundId;
         final UUID oldClientUuid;
 
-        private ReplaceContext(long newKeyId, Long oldInboundId, UUID oldClientUuid) {
+        private ReplaceContext(long newKeyId, VpnKey.Backend oldBackend, Long oldInboundId, UUID oldClientUuid) {
             this.newKeyId = newKeyId;
+            this.oldBackend = oldBackend;
             this.oldInboundId = oldInboundId;
             this.oldClientUuid = oldClientUuid;
         }
@@ -613,21 +638,52 @@ public class VpnKeyService {
         return vpnKeyRepository.save(key);
     }
 
-    /** ======================================================================
-     *  ================== ВНЕ TX: 3x-ui + построение ссылки =================
-     *  ======================================================================
+    private BackendRuntime buildBackendRuntime(
+            VpnKey.Backend backend,
+            XuiProperties props,
+            ThreeXuiClient client,
+            String linkGroup
+    ) {
+        long primaryInbound = props.inboundId();
+        long effectiveXhttpInbound = props.xhttpInboundId() > 0 ? props.xhttpInboundId() : primaryInbound;
+        return new BackendRuntime(
+                backend,
+                client,
+                primaryInbound,
+                effectiveXhttpInbound,
+                props.publicHost(),
+                props.publicPort(),
+                props.xhttpPort(),
+                props.linkTag(),
+                props.xhttpLinkTag(),
+                linkGroup
+        );
+    }
 
-     /**
-     * Доводим ключ до ACTIVE:
-     *  - addClient (если он уже есть — можно обработать как идемпотентность)
-     *  - getInbound
-     *  - build vless://
-     *  - сохранить ACTIVE
-     *
-     * Важно: не держим транзакцию на время HTTP запросов.
-     */
+    private BackendRuntime backendConfig(VpnKey.Backend backend) {
+        VpnKey.Backend resolved = backend == null ? VpnKey.Backend.DEFAULT : backend;
+        return switch (resolved) {
+            case DEFAULT -> defaultBackend;
+            case RU_EU -> {
+                ensureBackendConfigured(VpnKey.Backend.RU_EU);
+                yield ruEuBackend;
+            }
+        };
+    }
+
+    private void ensureBackendConfigured(VpnKey.Backend backend) {
+        if (backend == VpnKey.Backend.RU_EU && ruEuBackend == null) {
+            throw new IllegalStateException("RU+EU панель не настроена");
+        }
+    }
+
+    private ThreeXuiClient clientFor(VpnKey.Backend backend) {
+        return backendConfig(backend).client();
+    }
+
     private VpnKey finalizeIssueOutsideTx(long keyId) {
         VpnKey key = vpnKeyRepository.findById(keyId).orElseThrow();
+        BackendRuntime backend = backendConfig(key.getBackend());
 
         // Если уже ACTIVE — вернуть
         if (key.getStatus() == VpnKey.Status.ACTIVE && !key.isRevoked()) {
@@ -641,11 +697,11 @@ public class VpnKeyService {
 
         try {
             // 1) создаём клиента в 3x-ui
-            xuiClient.addClient(key.getInboundId(), key.getClientUuid(), key.getClientEmail());
+            backend.client().addClient(key.getInboundId(), key.getClientUuid(), key.getClientEmail());
 
             // 2) берём inbound json (твой inbound содержит streamSettings/settings)
-            String inboundJson = xuiClient.getInbound(key.getInboundId());
-            LinkOptions linkOptions = resolveLinkOptions(key.getInboundId());
+            String inboundJson = backend.client().getInbound(key.getInboundId());
+            LinkOptions linkOptions = resolveLinkOptions(backend, key.getInboundId());
 
             // 3) строим ссылку vless://... на основе inbound
             String vlessLink = linkBuilder.buildLink(
@@ -668,7 +724,7 @@ public class VpnKeyService {
             // компенсация (по желанию):
             // можно delete или disable — чаще disable безопаснее
             try {
-                xuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                backend.client().disableClient(key.getInboundId(), key.getClientUuid());
             } catch (Exception ignored) {
             }
 
@@ -686,17 +742,19 @@ public class VpnKeyService {
         if (v == null || v.isBlank()) return false;
         if (!v.startsWith("vless://")) return false;
         if (v.contains("encryption=none") || !v.contains("encryption=")) return true;
-        LinkOptions linkOptions = resolveLinkOptions(key.getInboundId());
+        BackendRuntime backend = backendConfig(key.getBackend());
+        LinkOptions linkOptions = resolveLinkOptions(backend, key.getInboundId());
         String expectedTag = encodeFragment((linkOptions.tag == null || linkOptions.tag.isBlank()) ? "vpn" : linkOptions.tag);
         String currentTag = extractFragment(v);
         if (currentTag == null || !currentTag.equals(expectedTag)) return true;
-        return !hasExpectedGroup(v);
+        return !hasExpectedGroup(v, backend);
     }
 
     private VpnKey refreshActiveLink(VpnKey key) {
         try {
-            String inboundJson = xuiClient.getInbound(key.getInboundId());
-            LinkOptions linkOptions = resolveLinkOptions(key.getInboundId());
+            BackendRuntime backend = backendConfig(key.getBackend());
+            String inboundJson = backend.client().getInbound(key.getInboundId());
+            LinkOptions linkOptions = resolveLinkOptions(backend, key.getInboundId());
             String vlessLink = linkBuilder.buildLink(
                     inboundJson,
                     linkOptions.host,
@@ -719,33 +777,34 @@ public class VpnKeyService {
         return url.substring(idx + 1);
     }
 
-    private boolean hasExpectedGroup(String url) {
-        if (linkGroup == null || linkGroup.isBlank()) return true;
-        String expected = "group=" + encodeQuery(linkGroup);
+    private boolean hasExpectedGroup(String url, BackendRuntime backend) {
+        if (backend.linkGroup() == null || backend.linkGroup().isBlank()) return true;
+        String expected = "group=" + encodeQuery(backend.linkGroup());
         return url.contains(expected);
     }
 
-    private Long resolveReplacementInbound(Long currentInbound) {
+    private Long resolveReplacementInbound(VpnKey.Backend backend, Long currentInbound) {
+        BackendRuntime runtime = backendConfig(backend);
         if (currentInbound == null) {
-            return inbound;
+            return runtime.inbound();
         }
-        if (xhttpInbound == null || xhttpInbound <= 0 || xhttpInbound.equals(inbound)) {
-            return inbound;
+        if (runtime.xhttpInbound() <= 0 || runtime.xhttpInbound().equals(runtime.inbound())) {
+            return runtime.inbound();
         }
-        if (currentInbound.equals(inbound)) {
-            return xhttpInbound;
+        if (currentInbound.equals(runtime.inbound())) {
+            return runtime.xhttpInbound();
         }
-        if (currentInbound.equals(xhttpInbound)) {
-            return inbound;
+        if (currentInbound.equals(runtime.xhttpInbound())) {
+            return runtime.inbound();
         }
-        return xhttpInbound;
+        return runtime.xhttpInbound();
     }
 
-    private LinkOptions resolveLinkOptions(Long inboundId) {
-        if (inboundId != null && inboundId.equals(xhttpInbound)) {
-            return new LinkOptions(publicHost, xhttpPort, xhttpLinkTag);
+    private LinkOptions resolveLinkOptions(BackendRuntime backend, Long inboundId) {
+        if (inboundId != null && inboundId.equals(backend.xhttpInbound())) {
+            return new LinkOptions(backend.publicHost(), backend.xhttpPort(), backend.xhttpLinkTag());
         }
-        return new LinkOptions(publicHost, publicPort, linkTag);
+        return new LinkOptions(backend.publicHost(), backend.publicPort(), backend.linkTag());
     }
 
     private static final class LinkOptions {
@@ -757,6 +816,83 @@ public class VpnKeyService {
             this.host = host;
             this.port = port;
             this.tag = tag;
+        }
+    }
+
+    private static final class BackendRuntime {
+        private final VpnKey.Backend backend;
+        private final ThreeXuiClient client;
+        private final Long inbound;
+        private final Long xhttpInbound;
+        private final String publicHost;
+        private final int publicPort;
+        private final int xhttpPort;
+        private final String linkTag;
+        private final String xhttpLinkTag;
+        private final String linkGroup;
+
+        private BackendRuntime(
+                VpnKey.Backend backend,
+                ThreeXuiClient client,
+                Long inbound,
+                Long xhttpInbound,
+                String publicHost,
+                int publicPort,
+                int xhttpPort,
+                String linkTag,
+                String xhttpLinkTag,
+                String linkGroup
+        ) {
+            this.backend = backend;
+            this.client = client;
+            this.inbound = inbound;
+            this.xhttpInbound = xhttpInbound;
+            this.publicHost = publicHost;
+            this.publicPort = publicPort;
+            this.xhttpPort = xhttpPort;
+            this.linkTag = linkTag;
+            this.xhttpLinkTag = xhttpLinkTag;
+            this.linkGroup = linkGroup;
+        }
+
+        private VpnKey.Backend backend() {
+            return backend;
+        }
+
+        private ThreeXuiClient client() {
+            return client;
+        }
+
+        private Long inbound() {
+            return inbound;
+        }
+
+        private Long xhttpInbound() {
+            return xhttpInbound;
+        }
+
+        private String publicHost() {
+            return publicHost;
+        }
+
+        private int publicPort() {
+            return publicPort;
+        }
+
+        private int xhttpPort() {
+            return xhttpPort;
+        }
+
+        private String linkTag() {
+            return linkTag;
+        }
+
+        private String xhttpLinkTag() {
+            return xhttpLinkTag;
+        }
+
+        private String linkGroup() {
+            return linkGroup;
         }
     }
 

@@ -62,6 +62,9 @@ public class VlessLinkBuilder {
                         JsonMini.extractFieldValue(inbound, "realitySettings")
                 );
             }
+            String realityClientSettings = JsonMini.unquoteIfString(
+                    JsonMini.extractFieldValue(realitySettings, "settings")
+            );
             String settings = JsonMini.unquoteIfString(
                     JsonMini.extractFieldValue(inbound, "settings")
             );
@@ -100,6 +103,7 @@ public class VlessLinkBuilder {
 
             if ("reality".equalsIgnoreCase(security)) {
                 String pbk = firstNonBlank(
+                        stringField(realityClientSettings, "publicKey"),
                         stringField(realitySettings, "publicKey"),
                         stringField(streamSettings, "publicKey"),
                         fallbackPublicKey
@@ -110,6 +114,7 @@ public class VlessLinkBuilder {
 
                 String sni = firstNonBlank(
                         firstArrayItem(realitySettings, "serverNames"),
+                        stringField(realityClientSettings, "serverName"),
                         stringField(realitySettings, "serverName"),
                         hostFromTarget(stringField(realitySettings, "dest")),
                         hostFromTarget(stringField(realitySettings, "target")),
@@ -125,11 +130,13 @@ public class VlessLinkBuilder {
                         "0000"
                 );
                 String fp = firstNonBlank(
+                        stringField(realityClientSettings, "fingerprint"),
                         stringField(realitySettings, "fingerprint"),
                         stringField(streamSettings, "fingerprint"),
                         "chrome"
                 );
                 String spx = firstNonBlank(
+                        stringField(realityClientSettings, "spiderX"),
                         stringField(realitySettings, "spiderX"),
                         "/"
                 );

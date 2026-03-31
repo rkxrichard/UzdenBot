@@ -7,12 +7,14 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Chat;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.PhotoSize;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.entities.User;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class AdminFlowServiceTest {
@@ -58,6 +60,48 @@ class AdminFlowServiceTest {
         assertEquals("1", firstCopy.getFromChatId());
         assertEquals(77, firstCopy.getMessageId());
 
+        verify(adminStateService).clear(1L);
+    }
+
+    @Test
+    void createRuEuKeyFindsUserByTelegramId() {
+        AdminStateService adminStateService = mock(AdminStateService.class);
+        SubscriptionService subscriptionService = mock(SubscriptionService.class);
+        UserService userService = mock(UserService.class);
+        VpnKeyService vpnKeyService = mock(VpnKeyService.class);
+        ReferralService referralService = mock(ReferralService.class);
+
+        AdminFlowService service = new AdminFlowService(
+                adminStateService,
+                subscriptionService,
+                userService,
+                vpnKeyService,
+                referralService
+        );
+
+        User user = new User();
+        user.setId(55L);
+        user.setTelegramId(123456L);
+        user.setUsername("bridge_user");
+        when(userService.findByTelegramId(123456L)).thenReturn(java.util.Optional.of(user));
+        when(subscriptionService.getActiveSubscription(user)).thenReturn(java.util.Optional.empty());
+
+        VpnKey key = new VpnKey();
+        key.setId(77L);
+        key.setBackend(VpnKey.Backend.RU_EU);
+        when(vpnKeyService.issueRuEuKey(user)).thenReturn(key);
+
+        Message message = new Message();
+        message.setText("123456");
+
+        List<BotApiMethod<?>> result = service.handleAdminMessage(1L, message, AdminAction.CREATE_RU_EU_KEY);
+
+        assertEquals(1, result.size());
+        assertInstanceOf(SendMessage.class, result.get(0));
+        SendMessage reply = (SendMessage) result.get(0);
+        assertTrue(reply.getText().contains("RU+EU ключ создан"));
+        assertTrue(reply.getText().contains("@bridge_user"));
+        verify(vpnKeyService).issueRuEuKey(user);
         verify(adminStateService).clear(1L);
     }
 }

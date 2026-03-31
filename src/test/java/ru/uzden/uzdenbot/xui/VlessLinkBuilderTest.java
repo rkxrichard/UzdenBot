@@ -51,7 +51,10 @@ class VlessLinkBuilderTest {
         assertTrue(link.contains("security=reality"));
         assertTrue(link.contains("path=%2Fru"));
         assertTrue(link.contains("mode=packet-up"));
+        assertTrue(link.contains("pbk=NcLdVzwDsWwz2cfbdSHG3q57_pp8sCkBAscwCbVsfUo"));
         assertTrue(link.contains("fp=firefox"));
+        assertTrue(link.contains("sni=stats.vk-portal.net"));
+        assertTrue(link.contains("sid=9f1e80dbaf"));
         assertFalse(link.contains("flow="));
     }
 }

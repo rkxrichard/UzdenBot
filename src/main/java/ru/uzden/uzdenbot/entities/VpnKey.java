@@ -12,6 +12,7 @@ import java.util.UUID;
         indexes = {
                 @Index(name = "idx_vpn_keys_user_id", columnList = "user_id"),
                 @Index(name = "idx_vpn_keys_inbound_id", columnList = "inbound_id"),
+                @Index(name = "idx_vpn_keys_backend", columnList = "backend"),
                 @Index(name = "idx_vpn_keys_client_uuid", columnList = "client_uuid"),
                 @Index(name = "idx_vpn_keys_status", columnList = "status"),
                 @Index(name = "idx_vpn_keys_updated_at", columnList = "updated_at")
@@ -25,6 +26,11 @@ public class VpnKey {
         ACTIVE,    // ключ готов и выдан
         REVOKED,   // ключ отозван
         FAILED     // выпуск/операция сорвалась (можно ретраить)
+    }
+
+    public enum Backend {
+        DEFAULT,
+        RU_EU
     }
 
     @Id
@@ -60,6 +66,10 @@ public class VpnKey {
      */
     @Column(name = "inbound_id", nullable = false)
     private Long inboundId = 1L;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "backend", nullable = false)
+    private Backend backend = Backend.DEFAULT;
 
     /**
      * UUID клиента (clients[].id) — главный идентификатор клиента в 3x-ui.

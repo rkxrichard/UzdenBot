@@ -10,6 +10,7 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import ru.uzden.uzdenbot.entities.Subscription;
 import ru.uzden.uzdenbot.entities.User;
+import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.utils.BotMessageFactory;
 import ru.uzden.uzdenbot.utils.BotTextUtils;
 
@@ -42,6 +43,7 @@ public class AdminFlowService {
             case DISABLE_USER -> handleDisableUser(chatId, trimmed, out);
             case ENABLE_USER -> handleEnableUser(chatId, trimmed, out);
             case BROADCAST -> handleBroadcast(chatId, message, out);
+            case CREATE_RU_EU_KEY -> handleCreateRuEuKey(chatId, trimmed, out);
             case CREATE_REFERRAL_LINK -> handleCreateReferralLink(chatId, trimmed, out);
             case REFERRAL_LINK_STATS -> handleReferralLinkStats(chatId, trimmed, out);
             case RESET_REFERRAL_LINK_COUNTER -> handleResetReferralLinkCounter(chatId, trimmed, out);
@@ -117,9 +119,13 @@ public class AdminFlowService {
         User user = userOpt.get();
         Subscription sub;
         var keys = vpnKeyService.listUserKeys(user);
+        var preferredKey = keys.stream()
+                .filter(key -> key.getBackend() == VpnKey.Backend.DEFAULT)
+                .findFirst()
+                .orElse(keys.isEmpty() ? null : keys.get(0));
         String keyLabel;
-        if (!keys.isEmpty()) {
-            sub = subscriptionService.extendSubscriptionForKey(user, keys.get(0), days);
+        if (preferredKey != null) {
+            sub = subscriptionService.extendSubscriptionForKey(user, preferredKey, days);
             keyLabel = "№1";
         } else {
             var key = vpnKeyService.createPendingKey(user);
@@ -293,6 +299,38 @@ public class AdminFlowService {
                         "Переходов по ссылке: " + link.transitionsCount() + "\n" +
                         "Бонусные дни по этой ссылке не начисляются.\n\n" +
                         "Ссылка:\n" + url));
+    }
+
+    private void handleCreateRuEuKey(Long chatId, String text, List<BotApiMethod<?>> out) {
+        String identifier = firstTokenIdentifier(text);
+        if (identifier == null) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать @username или telegram id пользователя."));
+            return;
+        }
+
+        Optional<User> userOpt = findUserByIdentifier(identifier);
+        if (userOpt.isEmpty()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Пользователь не найден. Он должен сначала написать /start."));
+            return;
+        }
+
+        User user = userOpt.get();
+        try {
+            VpnKey key = vpnKeyService.issueRuEuKey(user);
+            boolean hasActiveSubscription = subscriptionService.getActiveSubscription(user).isPresent();
+
+            adminStateService.clear(chatId);
+            out.add(BotMessageFactory.simpleMessage(chatId,
+                    "🌉 RU+EU ключ создан.\n" +
+                            "Пользователь: " + displayUser(user) + "\n" +
+                            "Ключ ID: " + key.getId() + "\n" +
+                            "Тип: RU+EU\n" +
+                            (hasActiveSubscription
+                                    ? "Пользователь сможет получить его в разделе «Мои ключи»."
+                                    : "У пользователя сейчас нет активной подписки. Ключ создан, но доступ через меню откроется после активации подписки.")));
+        } catch (Exception e) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось создать RU+EU ключ: " + e.getMessage()));
+        }
     }
 
     private void handleReferralLinkStats(Long chatId, String text, List<BotApiMethod<?>> out) {

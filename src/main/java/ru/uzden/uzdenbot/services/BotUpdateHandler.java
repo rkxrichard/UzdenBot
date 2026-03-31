@@ -263,6 +263,13 @@ public class BotUpdateHandler {
                                     "Отмена (или /cancel) — отмена."));
                 }
             }
+            case "ADMIN_CREATE_RU_EU_KEY" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.CREATE_RU_EU_KEY);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "Отправьте @username или telegram id пользователя, для которого нужно создать отдельный RU+EU ключ.\n\nОтмена (или /cancel) — отмена."));
+                }
+            }
             case "ADMIN_CREATE_REF_LINK" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.CREATE_REFERRAL_LINK);

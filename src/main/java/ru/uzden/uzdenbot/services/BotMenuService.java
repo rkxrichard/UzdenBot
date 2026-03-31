@@ -126,6 +126,10 @@ public class BotMenuService {
                 .text("📣 Рассылка")
                 .callbackData("ADMIN_BROADCAST")
                 .build();
+        InlineKeyboardButton bCreateRuEuKey = InlineKeyboardButton.builder()
+                .text("🌉 Создать RU+EU ключ")
+                .callbackData("ADMIN_CREATE_RU_EU_KEY")
+                .build();
         InlineKeyboardButton bCreateReferralLink = InlineKeyboardButton.builder()
                 .text("🔗 Создать реф. ссылку")
                 .callbackData("ADMIN_CREATE_REF_LINK")
@@ -169,6 +173,7 @@ public class BotMenuService {
                         List.of(bCheckSub),
                         List.of(bActiveUsers),
                         List.of(bBroadcast),
+                        List.of(bCreateRuEuKey),
                         List.of(bCreateReferralLink),
                         List.of(bReferralStats),
                         List.of(bResetReferralCounter),
@@ -458,6 +463,9 @@ public class BotMenuService {
                 text.append("\n\n🔑 Ключ №")
                         .append(i + 1)
                         .append("\n")
+                        .append("Тип: ")
+                        .append(keyBackendLabel(key))
+                        .append("\n")
                         .append("Статус: ")
                         .append(keyStatusLabel(key))
                         .append("\n")
@@ -556,6 +564,7 @@ public class BotMenuService {
         Optional<Subscription> keySubOpt = subscriptionService.getActiveSubscription(target);
         String text = "🔑 Ключ №" + (index + 1) + "\n" +
                 "━━━━━━━━━━━━\n" +
+                "Тип: " + keyBackendLabel(target) + "\n" +
                 "Статус: " + keyStatusLabel(target) + "\n" +
                 "Срок: " + keyDaysLeftText(target) + "\n" +
                 "Создан: " + created +
@@ -765,6 +774,14 @@ public class BotMenuService {
             case PENDING -> "выпускается";
             case FAILED -> "ошибка";
             case REVOKED -> "отозван";
+        };
+    }
+
+    private String keyBackendLabel(VpnKey key) {
+        if (key == null || key.getBackend() == null) return "обычный";
+        return switch (key.getBackend()) {
+            case DEFAULT -> "обычный";
+            case RU_EU -> "RU+EU";
         };
     }
 

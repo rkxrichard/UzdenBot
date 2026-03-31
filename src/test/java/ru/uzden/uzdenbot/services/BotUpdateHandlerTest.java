@@ -244,6 +244,49 @@ class BotUpdateHandlerTest {
     }
 
     @Test
+    void adminCanStartCreateRuEuKeyFlow() throws Exception {
+        BotMenuService botMenuService = mock(BotMenuService.class);
+        AdminService adminService = mock(AdminService.class);
+        AdminStateService adminStateService = mock(AdminStateService.class);
+        AdminFlowService adminFlowService = mock(AdminFlowService.class);
+        UserService userService = mock(UserService.class);
+        VpnKeyService vpnKeyService = mock(VpnKeyService.class);
+        IdempotencyService idempotencyService = mock(IdempotencyService.class);
+        PaymentService paymentService = mock(PaymentService.class);
+        SubscriptionPlansProperties plans = new SubscriptionPlansProperties();
+        ReferralService referralService = mock(ReferralService.class);
+
+        BotUpdateHandler handler = new BotUpdateHandler(
+                botMenuService,
+                adminService,
+                adminStateService,
+                adminFlowService,
+                userService,
+                vpnKeyService,
+                idempotencyService,
+                paymentService,
+                plans,
+                referralService
+        );
+        setIdempotencyTtl(handler, 10L);
+
+        when(adminService.isAdmin(anyLong())).thenReturn(true);
+        User user = new User();
+        user.setDisabled(false);
+        when(userService.registerOrUpdate(any(org.telegram.telegrambots.meta.api.objects.User.class))).thenReturn(user);
+
+        Update update = callbackUpdate(1L, 100L, "cb5", "ADMIN_CREATE_RU_EU_KEY");
+        List<BotApiMethod<?>> result = handler.handle(update);
+
+        assertEquals(2, result.size());
+        assertInstanceOf(SendMessage.class, result.get(0));
+        assertInstanceOf(AnswerCallbackQuery.class, result.get(1));
+        SendMessage prompt = (SendMessage) result.get(0);
+        assertTrue(prompt.getText().contains("RU+EU ключ"));
+        verify(adminStateService).set(1L, AdminAction.CREATE_RU_EU_KEY);
+    }
+
+    @Test
     void adminBroadcastAcceptsPhotoMessage() throws Exception {
         BotMenuService botMenuService = mock(BotMenuService.class);
         AdminService adminService = mock(AdminService.class);
