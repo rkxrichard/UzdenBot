@@ -41,7 +41,9 @@ class VpnKeyServiceTest {
                         8443,
                         "WayGuard",
                         "WayGuard XHTTP",
-                        "pubkey"
+                        "pubkey",
+                        "web.max.ru",
+                        "web.max.ru:443"
                 ),
                 new RuEuXuiProperties(
                         "",
@@ -53,6 +55,8 @@ class VpnKeyServiceTest {
                         "",
                         443,
                         8443,
+                        "",
+                        "",
                         "",
                         "",
                         ""

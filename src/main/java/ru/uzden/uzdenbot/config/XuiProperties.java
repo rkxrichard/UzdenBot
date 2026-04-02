@@ -15,5 +15,7 @@ public record XuiProperties(
         int xhttpPort,
         String linkTag,
         String xhttpLinkTag,
-        String realityPublicKey
+        String realityPublicKey,
+        String realitySni,
+        String realityTarget
 ) {}

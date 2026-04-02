@@ -128,6 +128,8 @@ xui-ru-eu:
   link-tag: ${XUI_RU_EU_LINK_TAG:WayGuard RU+EU}
   xhttp-link-tag: ${XUI_RU_EU_XHTTP_LINK_TAG:WayGuard RU+EU}
   reality-public-key: ${XUI_RU_EU_REALITY_PUBLIC_KEY:}
+  reality-sni: ${XUI_RU_EU_REALITY_SNI:}
+  reality-target: ${XUI_RU_EU_REALITY_TARGET:}
   base-url: ${XUI_RU_EU_BASE_URL:}
   base-path: ${XUI_RU_EU_BASE_PATH:}
   username: ${XUI_RU_EU_USERNAME:}

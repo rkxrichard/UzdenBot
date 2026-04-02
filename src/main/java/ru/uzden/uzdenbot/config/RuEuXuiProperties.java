@@ -15,7 +15,9 @@ public record RuEuXuiProperties(
         int xhttpPort,
         String linkTag,
         String xhttpLinkTag,
-        String realityPublicKey
+        String realityPublicKey,
+        String realitySni,
+        String realityTarget
 ) {
     public boolean configured() {
         return hasText(baseUrl)
@@ -38,7 +40,9 @@ public record RuEuXuiProperties(
                 xhttpPort,
                 linkTag,
                 xhttpLinkTag,
-                realityPublicKey
+                realityPublicKey,
+                realitySni,
+                realityTarget
         );
     }
 

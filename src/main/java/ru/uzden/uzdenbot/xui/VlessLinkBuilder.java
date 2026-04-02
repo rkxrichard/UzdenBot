@@ -15,6 +15,13 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class VlessLinkBuilder {
 
+    public record LinkFallbacks(
+            String publicKey,
+            String sni,
+            String target,
+            String group
+    ) {}
+
     private final String fallbackPublicKey;
     private final String fallbackSni;
     private final String fallbackTarget;
@@ -38,7 +45,18 @@ public class VlessLinkBuilder {
             java.util.UUID clientUuid,
             String linkTag
     ) {
-        return buildLink(inboundJson, publicHost, publicPort, clientUuid.toString(), linkTag);
+        return buildLink(inboundJson, publicHost, publicPort, clientUuid.toString(), linkTag, null);
+    }
+
+    public String buildLink(
+            String inboundJson,
+            String publicHost,
+            int publicPort,
+            java.util.UUID clientUuid,
+            String linkTag,
+            LinkFallbacks fallbacks
+    ) {
+        return buildLink(inboundJson, publicHost, publicPort, clientUuid.toString(), linkTag, fallbacks);
     }
 
     public String buildLink(
@@ -47,6 +65,17 @@ public class VlessLinkBuilder {
             int publicPort,
             String clientUuid,
             String linkTag
+    ) {
+        return buildLink(inboundJson, publicHost, publicPort, clientUuid, linkTag, null);
+    }
+
+    public String buildLink(
+            String inboundJson,
+            String publicHost,
+            int publicPort,
+            String clientUuid,
+            String linkTag,
+            LinkFallbacks fallbacks
     ) {
         try {
             String inbound = JsonMini.unquoteIfString(inboundJson);
@@ -106,6 +135,7 @@ public class VlessLinkBuilder {
                         stringField(realityClientSettings, "publicKey"),
                         stringField(realitySettings, "publicKey"),
                         stringField(streamSettings, "publicKey"),
+                        fallbacks == null ? null : fallbacks.publicKey(),
                         fallbackPublicKey
                 );
                 if (pbk == null || pbk.isBlank()) {
@@ -118,6 +148,8 @@ public class VlessLinkBuilder {
                         stringField(realitySettings, "serverName"),
                         hostFromTarget(stringField(realitySettings, "dest")),
                         hostFromTarget(stringField(realitySettings, "target")),
+                        fallbacks == null ? null : fallbacks.sni(),
+                        hostFromTarget(fallbacks == null ? null : fallbacks.target()),
                         fallbackSni,
                         hostFromTarget(fallbackTarget)
                 );
@@ -170,8 +202,12 @@ public class VlessLinkBuilder {
             if (flow != null && !flow.isBlank()) {
                 qs.append("&flow=").append(url(flow));
             }
-            if (linkGroup != null && !linkGroup.isBlank()) {
-                qs.append("&group=").append(url(linkGroup));
+            String effectiveGroup = firstNonBlank(
+                    fallbacks == null ? null : fallbacks.group(),
+                    linkGroup
+            );
+            if (effectiveGroup != null && !effectiveGroup.isBlank()) {
+                qs.append("&group=").append(url(effectiveGroup));
             }
 
             String tag = (linkTag == null || linkTag.isBlank()) ? "vpn" : linkTag;

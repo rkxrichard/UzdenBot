@@ -665,6 +665,9 @@ public class VpnKeyService {
                 props.xhttpPort(),
                 props.linkTag(),
                 props.xhttpLinkTag(),
+                props.realityPublicKey(),
+                props.realitySni(),
+                props.realityTarget(),
                 linkGroup
         );
     }
@@ -718,7 +721,13 @@ public class VpnKeyService {
                     linkOptions.host,
                     linkOptions.port,
                     key.getClientUuid(),
-                    linkOptions.tag
+                    linkOptions.tag,
+                    new VlessLinkBuilder.LinkFallbacks(
+                            backend.realityPublicKey(),
+                            backend.realitySni(),
+                            backend.realityTarget(),
+                            backend.linkGroup()
+                    )
             );
 
             // 4) финализируем в БД
@@ -769,7 +778,13 @@ public class VpnKeyService {
                     linkOptions.host,
                     linkOptions.port,
                     key.getClientUuid(),
-                    linkOptions.tag
+                    linkOptions.tag,
+                    new VlessLinkBuilder.LinkFallbacks(
+                            backend.realityPublicKey(),
+                            backend.realitySni(),
+                            backend.realityTarget(),
+                            backend.linkGroup()
+                    )
             );
             if (!vlessLink.equals(key.getKeyValue())) {
                 return tx.execute(status -> activateTx(key.getId(), vlessLink));
@@ -838,6 +853,9 @@ public class VpnKeyService {
         private final int xhttpPort;
         private final String linkTag;
         private final String xhttpLinkTag;
+        private final String realityPublicKey;
+        private final String realitySni;
+        private final String realityTarget;
         private final String linkGroup;
 
         private BackendRuntime(
@@ -850,6 +868,9 @@ public class VpnKeyService {
                 int xhttpPort,
                 String linkTag,
                 String xhttpLinkTag,
+                String realityPublicKey,
+                String realitySni,
+                String realityTarget,
                 String linkGroup
         ) {
             this.backend = backend;
@@ -861,6 +882,9 @@ public class VpnKeyService {
             this.xhttpPort = xhttpPort;
             this.linkTag = linkTag;
             this.xhttpLinkTag = xhttpLinkTag;
+            this.realityPublicKey = realityPublicKey;
+            this.realitySni = realitySni;
+            this.realityTarget = realityTarget;
             this.linkGroup = linkGroup;
         }
 
@@ -898,6 +922,18 @@ public class VpnKeyService {
 
         private String xhttpLinkTag() {
             return xhttpLinkTag;
+        }
+
+        private String realityPublicKey() {
+            return realityPublicKey;
+        }
+
+        private String realitySni() {
+            return realitySni;
+        }
+
+        private String realityTarget() {
+            return realityTarget;
         }
 
         private String linkGroup() {
