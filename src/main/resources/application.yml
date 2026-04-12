@@ -103,17 +103,15 @@ telegram:
     ❗️Если импорт из буфера не появился или не сработал, вставьте ключ вручную через «Добавить».
 
 xui:
-  inbound-id: ${XUI_INBOUND_ID:1}
+  inbound-id: ${XUI_INBOUND_ID:7}
   xhttp-inbound-id: ${XUI_XHTTP_INBOUND_ID:4}
   public-host: ${XUI_PUBLIC_HOST:62.60.229.102}
-  public-port: ${XUI_PUBLIC_PORT:443}
+  public-port: ${XUI_PUBLIC_PORT:8444}
   xhttp-port: ${XUI_XHTTP_PORT:8443}
   link-tag: ${XUI_LINK_TAG:WayGuard}
   xhttp-link-tag: ${XUI_XHTTP_LINK_TAG:WayGuard XHTTP}
   link-group: WayGuard
-  reality-sni: ${XUI_REALITY_SNI:web.max.ru}
-  reality-target: ${XUI_REALITY_TARGET:web.max.ru:443}
-  reality-public-key: ${XUI_REALITY_PUBLIC_KEY:4LzYg8A6u5IN6VliHr6dcyQurE7HZSPSah5Zf3HrGV8}
+  reality-public-key: ${XUI_REALITY_PUBLIC_KEY:QtOTDI_3debL9FyPCtQ1Grzawekr_VAFXVc6t3glkxg}
   base-url: ${XUI_BASE_URL}
   base-path: ${XUI_BASE_PATH}
   username: ${XUI_USERNAME}
