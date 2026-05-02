@@ -36,15 +36,7 @@ class VpnKeyServiceTest {
                         "pass",
                         1L,
                         4L,
-                        List.of(1L, 4L),
-                        "62.60.229.102",
-                        443,
-                        8443,
-                        "WayGuard",
-                        "WayGuard XHTTP",
-                        "pubkey",
-                        "web.max.ru",
-                        "web.max.ru:443"
+                        List.of(1L, 4L)
                 ),
                 new RuEuXuiProperties(
                         "",
@@ -54,15 +46,7 @@ class VpnKeyServiceTest {
                         "",
                         0L,
                         0L,
-                        List.of(),
-                        "",
-                        443,
-                        8443,
-                        "",
-                        "",
-                        "",
-                        "",
-                        ""
+                        List.of()
                 ),
                 RestClient.builder(),
                 new ObjectMapper()

@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/vpn_bot
-    username: vpn_user
-    password: vpn_pass
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/vpn_bot}
+    username: ${SPRING_DATASOURCE_USERNAME:vpn_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:vpn_pass}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -13,15 +13,10 @@ spring:
     baseline-on-migrate: true
   data:
     redis:
-      password: ${REDIS_PASSWORD:supersecret123}
-      timeout: 2s
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-
-logging:
-  level:
-    org.springframework.boot.autoconfigure: DEBUG
-    org.springframework.boot.context.config: DEBUG
+      password: ${REDIS_PASSWORD:supersecret123}
+      timeout: 2s
 
 app:
   rate-limit:
@@ -58,87 +53,52 @@ telegram:
   bot:
     token: ${TELEGRAM_BOT_TOKEN}
     username: ${TELEGRAM_BOT_USERNAME}
-  admin-ids: "980389038"
+  admin-ids: ${TELEGRAM_ADMIN_IDS:980389038}
   support-username: ${TELEGRAM_SUPPORT_USERNAME:@xdersee}
   main-menu-text: |-
-    🏰 WayGuard
-    ━━━━━━━━━━━━
-    Всё нужное в одном месте:
-    • подключение VPN
-    • управление ключами
-    • быстрая помощь
+    WayGuard
 
-    Выберите действие ниже 👇
+    Все нужное в одном месте:
+    - подключение VPN
+    - управление ключами
+    - помощь
 
+    Выберите действие ниже.
   instructions-text: |-
-    📘 Инструкция подключения
-    ━━━━━━━━━━━━
-    🔑 Шаг 1. Получите subscription-ссылку
-    1) Откройте раздел «Мои ключи»
-    2) Нажмите «Новый ключ»
-    3) Скопируйте ссылку полностью
+    Инструкция подключения
 
-    📌 Важно:
-    Ссылка подписки содержит все доступные подключения
-    Копируйте её целиком, без изменений и лишних символов
+    1. Получите subscription-ссылку в разделе "Мои ключи".
+    2. Установите Happ:
+       iOS: https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973?l=en-GB
+       Android: https://play.google.com/store/apps/details?id=com.happproxy
+    3. Добавьте ссылку в Happ через импорт из буфера обмена.
 
-    📲 Шаг 2. Установите Happ
-    iOS: https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973?l=en-GB
-    Android: https://play.google.com/store/apps/details?id=com.happproxy
-
-    ⚙️ Шаг 3. Подключите ссылку в Happ
-    1) Откройте приложение Happ
-    2) Нажмите «Добавить» или «Импорт»
-    3) Выберите «Из буфера обмена»
-    4) Дождитесь добавления конфигурации
-    5) Включите подключение
-
-    ✅ Если телефон попросит разрешение на создание VPN-подключения, подтвердите его.
-
-    ♻️ Если подключение не работает, вы можете заменить ссылку в разделе «Мои ключи».
-
-    🌐 При переключении между разными сетями Wi‑Fi иногда бывают перебои в подключении.
-    В таком случае лучше просто перезапустить VPN в приложении.
-
-    ❗️Если импорт из буфера не появился или не сработал, вставьте ссылку вручную через «Добавить».
+    Ссылка подписки содержит все доступные подключения. Копируйте ее полностью.
 
 xui:
-  inbound-id: ${XUI_INBOUND_ID:1}
-  xhttp-inbound-id: ${XUI_XHTTP_INBOUND_ID:2}
-  subscription-inbound-ids: ${XUI_SUBSCRIPTION_INBOUND_IDS:1,2,3,4}
-  public-host: ${XUI_PUBLIC_HOST:62.60.229.102}
-  public-port: ${XUI_PUBLIC_PORT:443}
-  xhttp-port: ${XUI_XHTTP_PORT:8443}
-  link-tag: ${XUI_LINK_TAG:WayGuard}
-  xhttp-link-tag: ${XUI_XHTTP_LINK_TAG:WayGuard XHTTP}
-  link-group: WayGuard
-  reality-public-key: ${XUI_REALITY_PUBLIC_KEY:QtOTDI_3debL9FyPCtQ1Grzawekr_VAFXVc6t3glkxg}
-  subscription-base-url: ${XUI_SUBSCRIPTION_BASE_URL:}
-  base-url: ${XUI_BASE_URL}
-  base-path: ${XUI_BASE_PATH}
+  base-url: ${XUI_BASE_URL:https://78.17.47.241:22150}
+  base-path: ${XUI_BASE_PATH:/FskiXz3RVPTRaevzTF}
+  subscription-base-url: ${XUI_SUBSCRIPTION_BASE_URL:https://78.17.47.241:2096/sub}
   username: ${XUI_USERNAME}
   password: ${XUI_PASSWORD}
 
+  inbound-id: ${XUI_INBOUND_ID:1}
+  xhttp-inbound-id: ${XUI_XHTTP_INBOUND_ID:2}
+  subscription-inbound-ids: ${XUI_SUBSCRIPTION_INBOUND_IDS:1,2,3,4}
+
 xui-ru-eu:
-  inbound-id: ${XUI_RU_EU_INBOUND_ID:0}
-  xhttp-inbound-id: ${XUI_RU_EU_XHTTP_INBOUND_ID:0}
-  subscription-base-url: ${XUI_RU_EU_SUBSCRIPTION_BASE_URL:}
-  public-host: ${XUI_RU_EU_PUBLIC_HOST:}
-  public-port: ${XUI_RU_EU_PUBLIC_PORT:443}
-  xhttp-port: ${XUI_RU_EU_XHTTP_PORT:8443}
-  link-tag: ${XUI_RU_EU_LINK_TAG:WayGuard RU+EU}
-  xhttp-link-tag: ${XUI_RU_EU_XHTTP_LINK_TAG:WayGuard RU+EU}
-  reality-public-key: ${XUI_RU_EU_REALITY_PUBLIC_KEY:}
-  reality-sni: ${XUI_RU_EU_REALITY_SNI:}
-  reality-target: ${XUI_RU_EU_REALITY_TARGET:}
   base-url: ${XUI_RU_EU_BASE_URL:}
   base-path: ${XUI_RU_EU_BASE_PATH:}
+  subscription-base-url: ${XUI_RU_EU_SUBSCRIPTION_BASE_URL:}
   username: ${XUI_RU_EU_USERNAME:}
   password: ${XUI_RU_EU_PASSWORD:}
+  inbound-id: ${XUI_RU_EU_INBOUND_ID:0}
+  xhttp-inbound-id: ${XUI_RU_EU_XHTTP_INBOUND_ID:0}
+  subscription-inbound-ids: ${XUI_RU_EU_SUBSCRIPTION_INBOUND_IDS:0}
 
 yookassa:
   shop-id: ${YOOKASSA_SHOP_ID:YOUR_SHOP_ID}
-  secret-key: "${YOOKASSA_SECRET_KEY:test_*gyg0NJPb01g3cJ3-MQtQ-GGq13Iv2le12oi2Bv2Hd1q4}"
+  secret-key: "${YOOKASSA_SECRET_KEY:change_me}"
   api-base: https://api.yookassa.ru/v3
   return-url: "${YOOKASSA_RETURN_URL:https://t.me/${telegram.bot.username}}"
   webhook-secret: ${YOOKASSA_WEBHOOK_SECRET:}

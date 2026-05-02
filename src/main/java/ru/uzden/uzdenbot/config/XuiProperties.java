@@ -13,13 +13,5 @@ public record XuiProperties(
         String password,
         long inboundId,
         long xhttpInboundId,
-        List<Long> subscriptionInboundIds,
-        String publicHost,
-        int publicPort,
-        int xhttpPort,
-        String linkTag,
-        String xhttpLinkTag,
-        String realityPublicKey,
-        String realitySni,
-        String realityTarget
+        List<Long> subscriptionInboundIds
 ) {}

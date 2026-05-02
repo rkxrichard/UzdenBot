@@ -13,21 +13,12 @@ public record RuEuXuiProperties(
         String password,
         long inboundId,
         long xhttpInboundId,
-        List<Long> subscriptionInboundIds,
-        String publicHost,
-        int publicPort,
-        int xhttpPort,
-        String linkTag,
-        String xhttpLinkTag,
-        String realityPublicKey,
-        String realitySni,
-        String realityTarget
+        List<Long> subscriptionInboundIds
 ) {
     public boolean configured() {
         return hasText(baseUrl)
                 && hasText(username)
                 && hasText(password)
-                && hasText(publicHost)
                 && inboundId > 0;
     }
 
@@ -40,15 +31,7 @@ public record RuEuXuiProperties(
                 password,
                 inboundId,
                 xhttpInboundId > 0 ? xhttpInboundId : inboundId,
-                subscriptionInboundIds,
-                publicHost,
-                publicPort,
-                xhttpPort,
-                linkTag,
-                xhttpLinkTag,
-                realityPublicKey,
-                realitySni,
-                realityTarget
+                subscriptionInboundIds
         );
     }
 
