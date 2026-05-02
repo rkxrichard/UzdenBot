@@ -17,6 +17,7 @@ import ru.uzden.uzdenbot.repositories.VpnKeyRepository;
 import ru.uzden.uzdenbot.repositories.SubscriptionRepository;
 import ru.uzden.uzdenbot.xui.ThreeXuiClient;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -123,9 +124,12 @@ public class VpnKeyService {
             try {
                 OptionalLong traffic = backend.client().getClientTraffic(
                         inboundId,
-                        key.getClientUuid(),
-                        key.getClientEmail()
+                        panelClientUuid(key.getClientUuid(), inboundId),
+                        panelClientEmail(key.getClientEmail(), inboundId)
                 );
+                if (traffic.isEmpty()) {
+                    traffic = backend.client().getClientTraffic(inboundId, key.getClientUuid(), key.getClientEmail());
+                }
                 if (traffic.isPresent()) {
                     found = true;
                     totalTraffic += traffic.getAsLong();
@@ -735,9 +739,27 @@ public class VpnKeyService {
     private String issueSubscriptionLink(BackendRuntime backend, VpnKey key) {
         String subId = subscriptionSubId(key.getClientUuid());
         for (Long inboundId : clientInboundIds(backend, key.getInboundId())) {
-            backend.client().addClient(inboundId, key.getClientUuid(), key.getClientEmail(), subId);
+            disableLegacyClientIfPresent(backend, inboundId, key.getClientUuid());
+            backend.client().addClient(
+                    inboundId,
+                    panelClientUuid(key.getClientUuid(), inboundId),
+                    panelClientEmail(key.getClientEmail(), inboundId),
+                    subId
+            );
         }
         return backend.client().buildSubscriptionUrl(subId);
+    }
+
+    private void disableLegacyClientIfPresent(BackendRuntime backend, Long inboundId, UUID clientUuid) {
+        UUID panelUuid = panelClientUuid(clientUuid, inboundId);
+        if (panelUuid.equals(clientUuid)) {
+            return;
+        }
+        try {
+            backend.client().disableClient(inboundId, clientUuid);
+        } catch (Exception e) {
+            log.warn("Failed to disable legacy client in inbound {} uuid={}: {}", inboundId, clientUuid, safeMsg(e));
+        }
     }
 
     private void disableClientEverywhere(VpnKey key) {
@@ -755,7 +777,8 @@ public class VpnKeyService {
         RuntimeException last = null;
         for (Long inboundId : clientInboundIds(backend, fallbackInbound)) {
             try {
-                backend.client().disableClient(inboundId, clientUuid);
+                backend.client().disableClient(inboundId, panelClientUuid(clientUuid, inboundId));
+                disableLegacyClientIfPresent(backend, inboundId, clientUuid);
             } catch (Exception e) {
                 last = new IllegalStateException("disable failed for inbound " + inboundId + ": " + safeMsg(e), e);
                 log.warn("Failed to disable client in inbound {} uuid={}: {}", inboundId, clientUuid, safeMsg(e));
@@ -777,6 +800,16 @@ public class VpnKeyService {
     private String subscriptionSubId(UUID clientUuid) {
         String compact = clientUuid.toString().replace("-", "").toLowerCase();
         return "s" + compact.substring(0, 15);
+    }
+
+    private UUID panelClientUuid(UUID clientUuid, Long inboundId) {
+        String seed = clientUuid + ":inbound:" + inboundId;
+        return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String panelClientEmail(String email, Long inboundId) {
+        String base = (email == null || email.isBlank()) ? "client" : email;
+        return base + "_in" + inboundId;
     }
 
     private VpnKey finalizeIssueOutsideTx(long keyId) {
@@ -824,7 +857,7 @@ public class VpnKeyService {
     private boolean needsLinkRefresh(VpnKey key) {
         String v = key.getKeyValue();
         if (v == null || v.isBlank()) return false;
-        return v.startsWith("vless://") || v.startsWith("trojan://");
+        return v.startsWith("vless://") || v.startsWith("trojan://") || v.startsWith("http://") || v.startsWith("https://");
     }
 
     private VpnKey refreshActiveLink(VpnKey key) {
