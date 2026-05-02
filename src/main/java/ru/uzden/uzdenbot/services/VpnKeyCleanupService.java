@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.uzden.uzdenbot.entities.VpnKey;
 import ru.uzden.uzdenbot.repositories.VpnKeyRepository;
-import ru.uzden.uzdenbot.xui.ThreeXuiClient;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -21,7 +20,7 @@ import java.util.OptionalLong;
 public class VpnKeyCleanupService {
 
     private final VpnKeyRepository vpnKeyRepository;
-    private final ThreeXuiClient threeXuiClient;
+    private final VpnKeyService vpnKeyService;
 
     @Value("${app.vpn-keys.unused-ttl-hours:24}")
     private long unusedTtlHours;
@@ -50,9 +49,7 @@ public class VpnKeyCleanupService {
         List<VpnKey> candidates = vpnKeyRepository.findActiveOlderThan(border);
         int removed = 0;
         for (VpnKey key : candidates) {
-            OptionalLong traffic = threeXuiClient.getClientTraffic(
-                    key.getInboundId(), key.getClientUuid(), key.getClientEmail()
-            );
+            OptionalLong traffic = vpnKeyService.getClientTrafficEverywhere(key);
             if (traffic.isEmpty()) {
                 continue;
             }
@@ -71,7 +68,7 @@ public class VpnKeyCleanupService {
     private void tryDisableInXui(VpnKey key) {
         try {
             if (key.getClientUuid() != null && key.getInboundId() != null) {
-                threeXuiClient.disableClient(key.getInboundId(), key.getClientUuid());
+                vpnKeyService.disableClientEverywhereInPanel(key);
             }
         } catch (Exception e) {
             log.warn("Failed to disable client in 3x-ui for keyId={}: {}", key.getId(), e.getMessage());

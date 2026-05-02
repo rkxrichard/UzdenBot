@@ -14,6 +14,8 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import ru.uzden.uzdenbot.config.XuiProperties;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.OptionalLong;
@@ -31,6 +33,7 @@ public class ThreeXuiClient {
     private final ObjectMapper objectMapper;
     private final String normalizedBaseUrl;
     private final String normalizedBasePath;
+    private final String normalizedSubscriptionBaseUrl;
 
     /**
      * 3x-ui "panel" API is primarily consumed by its own web UI.
@@ -86,7 +89,9 @@ public class ThreeXuiClient {
         // basePath: может быть пустым, но если не пустой — начинается с / и без завершающего /
         if (!bp.isEmpty() && !bp.startsWith("/")) bp = "/" + bp;
         while (bp.endsWith("/") && bp.length() > 1) bp = bp.substring(0, bp.length() - 1);
+        if ("/".equals(bp)) bp = "";
         this.normalizedBasePath = bp;
+        this.normalizedSubscriptionBaseUrl = normalizeSubscriptionBaseUrl(props.subscriptionBaseUrl(), bu, bp);
 
         SimpleClientHttpRequestFactory rf = new SimpleClientHttpRequestFactory();
         rf.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
@@ -128,10 +133,13 @@ public class ThreeXuiClient {
      * Делает запрос ровно как web-панель: application/x-www-form-urlencoded с полями id и settings.
      */
     public void addClient(long inboundId, UUID clientUuid, String email) {
+        addClient(inboundId, clientUuid, email, randomSubId(16));
+    }
+
+    public void addClient(long inboundId, UUID clientUuid, String email, String subId) {
         ensureLoggedIn();
 
         // settings={"clients":[{...}]}
-        String subId = randomSubId(16);
         String inboundJson = getInbound(inboundId);
         String settingsJson = buildAddClientSettingsJson(clientUuid.toString(), email, subId, inboundJson);
 
@@ -147,6 +155,7 @@ public class ThreeXuiClient {
             // 3x-ui может вернуть ошибку "Duplicate email" если клиент уже существует.
             // Для нас это идемпотентный результат: считаем, что клиент уже добавлен ранее.
             if (msg != null && msg.toLowerCase().contains("duplicate email")) {
+                updateClientSettings(inboundId, clientUuid.toString(), settingsJson);
                 return;
             }
             throw new IllegalStateException("3x-ui addClient failed: " + msg);
@@ -156,6 +165,13 @@ public class ThreeXuiClient {
         if (!clientExistsInInbound(inboundId, clientUuid, email)) {
             throw new IllegalStateException("3x-ui addClient returned success but client not persisted (uuid/email not found in inbound)");
         }
+    }
+
+    public String buildSubscriptionUrl(String subId) {
+        if (subId == null || subId.isBlank()) {
+            throw new IllegalArgumentException("subId is required");
+        }
+        return normalizedSubscriptionBaseUrl + "/" + urlPath(subId);
     }
 
     public void disableClient(long inboundId, UUID clientUuid) {
@@ -177,6 +193,42 @@ public class ThreeXuiClient {
         HttpClientErrorException last = null;
         for (String pattern : UPDATE_CLIENT_CANDIDATES) {
             String path = String.format(pattern, clientUuid);
+            try {
+                String body = postFormWithAuth(path, form);
+                ApiEnvelope env = ApiEnvelope.parse(body);
+                if (!env.success) {
+                    String msg = (env.msg == null ? body : env.msg);
+                    throw new IllegalStateException("3x-ui updateClient failed: " + msg);
+                }
+                return;
+            } catch (HttpClientErrorException e) {
+                last = e;
+                if (isAuthError(e)) {
+                    reloginAndRetry(() -> {
+                        String body = postFormWithAuth(path, form);
+                        ApiEnvelope env = ApiEnvelope.parse(body);
+                        if (!env.success) {
+                            String msg = (env.msg == null ? body : env.msg);
+                            throw new IllegalStateException("3x-ui updateClient failed: " + msg);
+                        }
+                        return "";
+                    });
+                    return;
+                }
+            }
+        }
+        if (last != null) throw last;
+        throw new IllegalStateException("No updateClient endpoint candidates matched");
+    }
+
+    private void updateClientSettings(long inboundId, String clientId, String settingsJson) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("id", String.valueOf(inboundId));
+        form.add("settings", settingsJson);
+
+        HttpClientErrorException last = null;
+        for (String pattern : UPDATE_CLIENT_CANDIDATES) {
+            String path = String.format(pattern, clientId);
             try {
                 String body = postFormWithAuth(path, form);
                 ApiEnvelope env = ApiEnvelope.parse(body);
@@ -505,6 +557,18 @@ public class ThreeXuiClient {
     }
 
     private static String buildAddClientSettingsJson(String uuid, String email, String subId, String inboundJson) {
+        if ("trojan".equalsIgnoreCase(resolveProtocol(inboundJson))) {
+            return "{\"clients\":[{"
+                    + "\"password\":\"" + escapeJson(uuid) + "\","
+                    + "\"email\":\"" + escapeJson(email) + "\","
+                    + "\"limitIp\":0,"
+                    + "\"totalGB\":0,"
+                    + "\"expiryTime\":0,"
+                    + "\"enable\":true,"
+                    + "\"subId\":\"" + escapeJson(subId) + "\","
+                    + "\"reset\":0"
+                    + "}]}";
+        }
         String flow = resolveDefaultFlow(inboundJson);
         // максимально похоже на то, что шлёт панель (минимально нужные поля)
         return "{\"clients\":[{"
@@ -520,6 +584,18 @@ public class ThreeXuiClient {
                 + "}]}";
     }
 
+    private static String resolveProtocol(String inboundJson) {
+        if (inboundJson == null || inboundJson.isBlank()) {
+            return "vless";
+        }
+        String inbound = JsonMini.unquoteIfString(inboundJson);
+        String protocol = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "protocol"));
+        if (protocol == null || protocol.isBlank()) {
+            protocol = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "_protocol"));
+        }
+        return (protocol == null || protocol.isBlank()) ? "vless" : protocol;
+    }
+
     private static String resolveDefaultFlow(String inboundJson) {
         if (inboundJson == null || inboundJson.isBlank()) {
             return "xtls-rprx-vision";
@@ -527,7 +603,7 @@ public class ThreeXuiClient {
         String inbound = JsonMini.unquoteIfString(inboundJson);
         String streamSettings = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "streamSettings"));
         String network = JsonMini.unquoteIfString(JsonMini.extractFieldValue(streamSettings, "network"));
-        if ("xhttp".equalsIgnoreCase(network)) {
+        if ("xhttp".equalsIgnoreCase(network) || "grpc".equalsIgnoreCase(network)) {
             return "";
         }
         String settings = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "settings"));
@@ -540,6 +616,21 @@ public class ThreeXuiClient {
         Pattern p = Pattern.compile("\"flow\"\\s*:\\s*\"([^\"]*)\"");
         Matcher m = p.matcher(settingsJson);
         return m.find() ? m.group(1) : null;
+    }
+
+    private static String normalizeSubscriptionBaseUrl(String configured, String normalizedBaseUrl, String normalizedBasePath) {
+        String base = configured == null ? "" : configured.trim();
+        if (base.isBlank()) {
+            base = normalizedBaseUrl + normalizedBasePath + "/sub";
+        }
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base;
+    }
+
+    private static String urlPath(String s) {
+        return URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private static String escapeJson(String s) {
@@ -563,7 +654,7 @@ public class ThreeXuiClient {
         int objEnd = JsonMini.findMatchingBracket(settingsJson, objStart);
         if (objEnd < 0) return null;
         String obj = settingsJson.substring(objStart, objEnd + 1);
-        if (!obj.contains("\"id\"")) return null;
+        if (!obj.contains("\"id\"") && !obj.contains("\"password\"")) return null;
         return obj;
     }
 

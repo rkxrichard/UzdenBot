@@ -266,6 +266,7 @@ public class VlessLinkBuilder {
     private static String defaultFlowForNetwork(String network) {
         if (network == null) return "xtls-rprx-vision";
         if ("xhttp".equalsIgnoreCase(network)) return "";
+        if ("grpc".equalsIgnoreCase(network)) return "";
         return "xtls-rprx-vision";
     }
 

@@ -9,10 +9,10 @@ import ru.uzden.uzdenbot.repositories.SubscriptionRepository;
 import ru.uzden.uzdenbot.repositories.UserRepository;
 import ru.uzden.uzdenbot.repositories.VpnKeyRepository;
 import ru.uzden.uzdenbot.xui.ThreeXuiClient;
-import ru.uzden.uzdenbot.xui.VlessLinkBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.lang.reflect.Method;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
@@ -27,15 +27,16 @@ class VpnKeyServiceTest {
                 mock(SubscriptionService.class),
                 mock(SubscriptionRepository.class),
                 mock(ThreeXuiClient.class),
-                mock(VlessLinkBuilder.class),
                 mock(TransactionTemplate.class),
                 new XuiProperties(
                         "http://example.com",
                         "/panel",
+                        "",
                         "user",
                         "pass",
                         1L,
                         4L,
+                        List.of(1L, 4L),
                         "62.60.229.102",
                         443,
                         8443,
@@ -50,8 +51,10 @@ class VpnKeyServiceTest {
                         "",
                         "",
                         "",
+                        "",
                         0L,
                         0L,
+                        List.of(),
                         "",
                         443,
                         8443,
@@ -62,8 +65,7 @@ class VpnKeyServiceTest {
                         ""
                 ),
                 RestClient.builder(),
-                new ObjectMapper(),
-                "WayGuard"
+                new ObjectMapper()
         );
 
         Method method = VpnKeyService.class.getDeclaredMethod("resolveReplacementInbound", ru.uzden.uzdenbot.entities.VpnKey.Backend.class, Long.class);

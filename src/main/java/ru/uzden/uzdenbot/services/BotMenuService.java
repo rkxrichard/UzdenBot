@@ -650,9 +650,9 @@ public class BotMenuService {
     private String buildKeyDeliveryText(String keyValue, boolean includeInstructions, boolean replaced) {
         StringBuilder text = new StringBuilder();
         if (replaced) {
-            text.append("🔄 Ключ заменён. Новый ключ:\n\n");
+            text.append("🔄 Ключ заменён. Новая ссылка подписки:\n\n");
         } else {
-            text.append("🔑 Ваш VPN-ключ:\n\n");
+            text.append("🔑 Ваша subscription-ссылка:\n\n");
         }
         text.append("<code>")
                 .append(BotTextUtils.escapeHtml(keyValue))
