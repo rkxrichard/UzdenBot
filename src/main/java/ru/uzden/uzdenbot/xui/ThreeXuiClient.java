@@ -155,7 +155,14 @@ public class ThreeXuiClient {
             // 3x-ui может вернуть ошибку "Duplicate email" если клиент уже существует.
             // Для нас это идемпотентный результат: считаем, что клиент уже добавлен ранее.
             if (msg != null && msg.toLowerCase().contains("duplicate email")) {
-                updateClientSettings(inboundId, clientUuid.toString(), settingsJson);
+                if ("trojan".equalsIgnoreCase(resolveProtocol(inboundJson))) {
+                    return;
+                }
+                try {
+                    updateClientSettings(inboundId, clientUuid.toString(), settingsJson);
+                } catch (Exception e) {
+                    log.warn("3x-ui duplicate client exists in inbound {}, but updateClient failed: {}", inboundId, e.getMessage());
+                }
                 return;
             }
             throw new IllegalStateException("3x-ui addClient failed: " + msg);
