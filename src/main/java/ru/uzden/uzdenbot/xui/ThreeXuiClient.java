@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -179,6 +180,17 @@ public class ThreeXuiClient {
             throw new IllegalArgumentException("subId is required");
         }
         return normalizedSubscriptionBaseUrl + "/" + urlPath(subId);
+    }
+
+    public ResponseEntity<String> fetchSubscription(String subId) {
+        if (subId == null || subId.isBlank()) {
+            throw new IllegalArgumentException("subId is required");
+        }
+        return rest.get()
+                .uri(buildSubscriptionUrl(subId))
+                .header(HttpHeaders.ACCEPT, "*/*")
+                .retrieve()
+                .toEntity(String.class);
     }
 
     public void disableClient(long inboundId, UUID clientUuid) {

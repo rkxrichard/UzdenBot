@@ -28,6 +28,7 @@ class VpnKeyServiceTest {
                 mock(SubscriptionRepository.class),
                 mock(ThreeXuiClient.class),
                 mock(TransactionTemplate.class),
+                mock(SubscriptionProxyService.class),
                 new XuiProperties(
                         "http://example.com",
                         "/panel",

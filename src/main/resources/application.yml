@@ -48,6 +48,9 @@ app:
   referral:
     referrer-days: 7
     referred-days: 3
+  subscription-proxy:
+    base-url: ${APP_SUBSCRIPTION_PROXY_BASE_URL:}
+    title: ${APP_SUBSCRIPTION_TITLE:WayGuard}
 
 telegram:
   bot:

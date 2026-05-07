@@ -37,6 +37,7 @@ public class VpnKeyService {
     private final SubscriptionService subscriptionService;
     private final SubscriptionRepository subscriptionRepository;
     private final TransactionTemplate tx;
+    private final SubscriptionProxyService subscriptionProxyService;
 
     private final BackendRuntime defaultBackend;
     private final BackendRuntime ruEuBackend;
@@ -51,6 +52,7 @@ public class VpnKeyService {
             SubscriptionRepository subscriptionRepository,
             ThreeXuiClient xuiClient,
             TransactionTemplate tx,
+            SubscriptionProxyService subscriptionProxyService,
             XuiProperties xuiProperties,
             RuEuXuiProperties ruEuXuiProperties,
             RestClient.Builder restClientBuilder,
@@ -60,6 +62,7 @@ public class VpnKeyService {
         this.subscriptionService = subscriptionService;
         this.subscriptionRepository = subscriptionRepository;
         this.tx = tx;
+        this.subscriptionProxyService = subscriptionProxyService;
         this.defaultBackend = buildBackendRuntime(VpnKey.Backend.DEFAULT, xuiProperties, xuiClient);
         if (ruEuXuiProperties != null && ruEuXuiProperties.configured()) {
             XuiProperties ruEuResolved = ruEuXuiProperties.toXuiProperties();
@@ -747,7 +750,7 @@ public class VpnKeyService {
                     subId
             );
         }
-        return backend.client().buildSubscriptionUrl(subId);
+        return subscriptionProxyService.buildSubscriptionUrl(backend.backend(), subId);
     }
 
     private void disableLegacyClientIfPresent(BackendRuntime backend, Long inboundId, UUID clientUuid) {
