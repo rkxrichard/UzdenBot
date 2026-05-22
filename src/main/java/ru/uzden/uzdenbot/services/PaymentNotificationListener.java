@@ -36,8 +36,8 @@ public class PaymentNotificationListener {
         try {
             SendMessage statusMessage = buildStatusMessage(event);
             mainBot.execute(statusMessage);
-            if ("succeeded".equalsIgnoreCase(event.status()) && event.newKey() && event.keyId() != null) {
-                sendKeyIfPossible(user, event.keyId(), isFirstSuccessfulPurchase(user));
+            if ("succeeded".equalsIgnoreCase(event.status()) && event.keyId() != null) {
+                syncKeyAfterSuccessfulPayment(user, event.keyId(), event.newKey(), isFirstSuccessfulPurchase(user));
             }
             mainBot.execute(botMenuService.myKeysMenu(event.telegramId(), user));
         } catch (Exception e) {
@@ -72,17 +72,22 @@ public class PaymentNotificationListener {
                 .build();
     }
 
-    private void sendKeyIfPossible(User user, Long keyId, boolean includeInstructions) {
+    private void syncKeyAfterSuccessfulPayment(User user, Long keyId, boolean sendKeyToUser, boolean includeInstructions) {
         try {
             var key = vpnKeyService.getKeyForUser(user, keyId);
-            mainBot.execute(botMenuService.keyDeliveryMessage(
-                    user.getTelegramId(),
-                    key.getKeyValue(),
-                    includeInstructions,
-                    false
-            ));
+            if (sendKeyToUser) {
+                mainBot.execute(botMenuService.keyDeliveryMessage(
+                        user.getTelegramId(),
+                        key.getKeyValue(),
+                        includeInstructions,
+                        false
+                ));
+            }
         } catch (Exception e) {
-            String msg = "❌ Не удалось автоматически выдать ключ: " + e.getMessage();
+            String msg = sendKeyToUser
+                    ? "❌ Не удалось автоматически выдать ключ: " + e.getMessage()
+                    : "⚠️ Подписка продлена, но не удалось автоматически обновить все подключения. " +
+                    "Откройте «Мои ключи» и нажмите «Получить ключ».";
             SendMessage sm = SendMessage.builder()
                     .chatId(user.getTelegramId().toString())
                     .text(msg)
