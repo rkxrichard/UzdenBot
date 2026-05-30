@@ -50,7 +50,7 @@ class BotMenuServiceTest {
         List<String> callbacks = callbackData(markup);
 
         assertTrue(callbacks.contains("MENU_KEYS"));
-        assertFalse(callbacks.contains("MENU_SUBSCRIPTION"));
+        assertTrue(callbacks.contains("MENU_SUBSCRIPTION"));
         assertTrue(message.getText().contains("Откройте «Мои ключи»"));
     }
 
@@ -93,7 +93,7 @@ class BotMenuServiceTest {
         assertTrue(callbacks.contains("KEY_RENEW:10"));
         assertTrue(callbacks.contains("KEY_REPLACE:10"));
         assertFalse(callbacks.stream().anyMatch(data -> data.startsWith("KEY_SELECT:")));
-        assertTrue(message.getText().contains("сразу под нужным ключом"));
+        assertTrue(message.getText().contains("Нажмите нужную кнопку под ключом"));
     }
 
     @Test

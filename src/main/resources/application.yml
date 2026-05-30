@@ -59,24 +59,27 @@ telegram:
   admin-ids: ${TELEGRAM_ADMIN_IDS:980389038}
   support-username: ${TELEGRAM_SUPPORT_USERNAME:@xdersee}
   main-menu-text: |-
-    WayGuard
+    👋 WayGuard
 
-    Все нужное в одном месте:
-    - подключение VPN
-    - управление ключами
-    - помощь
-
-    Выберите действие ниже.
+    Подключение VPN без лишних шагов.
+    Здесь можно:
+    • выбрать тариф
+    • получить subscription-ссылку
+    • управлять своими ключами
   instructions-text: |-
-    Инструкция подключения
+    📘 Как подключить VPN
 
-    1. Получите subscription-ссылку в разделе "Мои ключи".
-    2. Установите Happ:
+    1. Откройте раздел «🔑 Мои ключи».
+    2. Нажмите «📋 Получить ссылку».
+    3. Установите Happ:
        iOS: https://apps.apple.com/ru/app/happ-proxy-utility-plus/id6746188973?l=en-GB
        Android: https://play.google.com/store/apps/details?id=com.happproxy
-    3. Добавьте ссылку в Happ через импорт из буфера обмена.
+    4. Скопируйте subscription-ссылку и добавьте её в Happ.
 
-    Ссылка подписки содержит все доступные подключения. Копируйте ее полностью.
+    Важно:
+    • копируйте ссылку полностью
+    • одна subscription-ссылка уже содержит все доступные подключения
+    • если соединение работает нестабильно, замените ключ в разделе «Мои ключи»
 
 xui:
   base-url: ${XUI_BASE_URL:https://78.17.47.241:22150}
