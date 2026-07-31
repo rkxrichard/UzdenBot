@@ -449,16 +449,16 @@ public class BotMenuService {
         List<VpnKey> keys = vpnKeyService.listUserKeys(user);
         int maxKeys = vpnKeyService.getMaxKeysPerUser();
 
-        StringBuilder text = new StringBuilder("🔑 Мои ключи\n━━━━━━━━━━━━\n");
+        StringBuilder text = new StringBuilder("<b>🔑 Мои ключи</b>\n━━━━━━━━━━━━\n");
         if (keys.isEmpty()) {
             text.append("Пока нет ни одного ключа.\n\nНажмите «Добавить ключ», чтобы выпустить первый доступ.");
         } else {
             text.append("Нажмите нужную кнопку под ключом: получить ссылку, продлить, заменить или удалить.\n");
             for (int i = 0; i < keys.size(); i++) {
                 VpnKey key = keys.get(i);
-                text.append("\n\n🔑 Ключ №")
+                text.append("\n\n<b>🔑 Ключ №")
                         .append(i + 1)
-                        .append("\n")
+                        .append("</b>\n")
                         .append("Тип: ")
                         .append(keyBackendLabel(key))
                         .append("\n")
@@ -529,6 +529,7 @@ public class BotMenuService {
         return SendMessage.builder()
                 .chatId(chatId.toString())
                 .text(text.toString())
+                .parseMode("HTML")
                 .replyMarkup(keyboardMarkup)
                 .build();
     }
@@ -563,7 +564,7 @@ public class BotMenuService {
 
         String created = formatInstant(target.getCreatedAt());
         Optional<Subscription> keySubOpt = subscriptionService.getActiveSubscription(target);
-        String text = "🔑 Ключ №" + (index + 1) + "\n" +
+        String text = "<b>🔑 Ключ №" + (index + 1) + "</b>\n" +
                 "━━━━━━━━━━━━\n" +
                 "Тип: " + keyBackendLabel(target) + "\n" +
                 "Статус: " + keyStatusLabel(target) + "\n" +
@@ -610,6 +611,7 @@ public class BotMenuService {
         return SendMessage.builder()
                 .chatId(chatId.toString())
                 .text(text)
+                .parseMode("HTML")
                 .replyMarkup(keyboardMarkup)
                 .build();
     }

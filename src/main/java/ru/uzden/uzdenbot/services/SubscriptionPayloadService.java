@@ -69,23 +69,23 @@ public class SubscriptionPayloadService {
         if (!query.isBlank()) {
             rebuilt += "?" + query;
         }
-        return rebuilt + "#" + encodeFragment(protocolLabel + " " + index);
+        return rebuilt + "#" + encodeFragment(index + ". " + protocolLabel);
     }
 
     private String resolveProtocolLabel(String prefix, LinkedHashMap<String, String> params) {
         String lowerPrefix = prefix.toLowerCase();
         if (lowerPrefix.startsWith("trojan://")) {
-            return "TROJAN";
+            return "Trojan";
         }
         String type = params.get("type");
         if (type == null || type.isBlank()) {
-            return "TCP";
+            return "VLESS";
         }
         return switch (type.trim().toLowerCase()) {
             case "xhttp" -> "XHTTP";
-            case "grpc" -> "GRPC";
-            case "tcp" -> "TCP";
-            case "trojan" -> "TROJAN";
+            case "grpc" -> "gRPC";
+            case "tcp" -> "VLESS";
+            case "trojan" -> "Trojan";
             default -> type.trim().toUpperCase();
         };
     }
