@@ -48,6 +48,8 @@ public class AdminFlowService {
             case REFERRAL_LINK_STATS -> handleReferralLinkStats(chatId, trimmed, out);
             case RESET_REFERRAL_LINK_COUNTER -> handleResetReferralLinkCounter(chatId, trimmed, out);
             case DELETE_REFERRAL_LINK -> handleDeleteReferralLink(chatId, trimmed, out);
+            case CREATE_ADMIN_KEY -> handleCreateAdminKey(chatId, trimmed, out);
+            case RENEW_ADMIN_KEY -> handleRenewAdminKey(chatId, trimmed, out);
             default -> {
             }
         }
@@ -326,6 +328,144 @@ public class AdminFlowService {
                             "Это тестовый ключ без подписки. Пользователь сможет получить его в разделе «Мои ключи»."));
         } catch (Exception e) {
             out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось создать RU+EU ключ: " + e.getMessage()));
+        }
+    }
+
+    private void handleCreateAdminKey(Long chatId, String text, List<BotApiMethod<?>> out) {
+        if (text == null || text.isBlank()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать срок в днях и имя. Пример: 30 Клиент Иван"));
+            return;
+        }
+        String[] parts = text.trim().split("\\s+", 2);
+        Integer days = parseDays(parts[0]);
+        String name = parts.length > 1 ? parts[1].trim() : null;
+        if (days == null || days <= 0) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Некорректный срок. Первым идёт число дней. Пример: 30 Клиент Иван"));
+            return;
+        }
+        if (name == null || name.isBlank()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать имя ключа после числа дней. Пример: 30 Клиент Иван"));
+            return;
+        }
+
+        Optional<User> ownerOpt = userService.findByTelegramId(chatId);
+        if (ownerOpt.isEmpty()) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Не удалось определить админа-владельца. Напишите /start и повторите."));
+            return;
+        }
+
+        try {
+            User owner = ownerOpt.get();
+            VpnKey key = vpnKeyService.issueAdminKey(owner, name);
+            Subscription sub = subscriptionService.extendSubscriptionForKey(owner, key, days);
+            adminStateService.clear(chatId);
+            out.add(buildAdminKeyDeliveryMessage(chatId, key, sub));
+        } catch (Exception e) {
+            log.warn("Не удалось создать админ-ключ: {}", e.getMessage());
+            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось создать ключ: " + e.getMessage()));
+        }
+    }
+
+    private void handleRenewAdminKey(Long chatId, String text, List<BotApiMethod<?>> out) {
+        String[] parts = text == null ? new String[0] : text.trim().split("\\s+");
+        if (parts.length < 2) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Нужно указать ID ключа и число дней. Пример: 42 30"));
+            return;
+        }
+        Long keyId = parseLong(parts[0]);
+        Integer days = parseDays(parts[1]);
+        if (keyId == null || days == null || days <= 0) {
+            out.add(BotMessageFactory.simpleMessage(chatId, "Некорректный формат. Пример: 42 30 (ID ключа и число дней)"));
+            return;
+        }
+        try {
+            VpnKey key = vpnKeyService.renewAdminKey(keyId, days);
+            Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
+            adminStateService.clear(chatId);
+            out.add(BotMessageFactory.simpleMessage(chatId,
+                    "🔁 Ключ продлён." +
+                            "\nID: " + key.getId() +
+                            (key.getName() != null && !key.getName().isBlank() ? "\nИмя: " + key.getName() : "") +
+                            "\n🗓 Действует до: " + sub.map(s -> BotTextUtils.formatDate(s.getEndDate())).orElse("-")));
+            out.add(buildAdminKeyLinkMessage(chatId, key));
+        } catch (Exception e) {
+            log.warn("Не удалось продлить админ-ключ {}: {}", keyId, e.getMessage());
+            out.add(BotMessageFactory.simpleMessage(chatId, "❌ Не удалось продлить ключ: " + e.getMessage()));
+        }
+    }
+
+    public SendMessage buildAdminKeysMessage(Long chatId) {
+        List<VpnKey> keys = vpnKeyService.listAdminCreatedKeys();
+        if (keys.isEmpty()) {
+            return BotMessageFactory.simpleMessage(chatId, "Созданных админом ключей пока нет.");
+        }
+        StringBuilder sb = new StringBuilder("📃 Созданные ключи (" + keys.size() + "):\n");
+        for (VpnKey key : keys) {
+            sb.append("\nID ").append(key.getId());
+            if (key.getName() != null && !key.getName().isBlank()) {
+                sb.append(" • ").append(key.getName());
+            }
+            sb.append("\nСтатус: ").append(adminKeyStatus(key));
+            Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
+            if (sub.isPresent()) {
+                long daysLeft = subscriptionService.getDaysLeft(sub.get());
+                sb.append("\nСрок: ").append(formatDaysLeft(daysLeft))
+                        .append(" (до ").append(BotTextUtils.formatDate(sub.get().getEndDate())).append(")");
+            } else {
+                sb.append("\nСрок: истёк / нет подписки");
+            }
+            sb.append("\n");
+        }
+        sb.append("\nПродление — «🔁 Продлить ключ», формат: ID дней (например: ")
+                .append(keys.get(0).getId()).append(" 30).");
+        return BotMessageFactory.simpleMessage(chatId, sb.toString().trim());
+    }
+
+    private SendMessage buildAdminKeyDeliveryMessage(Long chatId, VpnKey key, Subscription sub) {
+        String until = sub == null ? "-" : BotTextUtils.formatDate(sub.getEndDate());
+        String text = "✅ Ключ создан.\n" +
+                "ID: " + key.getId() + "\n" +
+                (key.getName() != null && !key.getName().isBlank()
+                        ? "Имя: " + BotTextUtils.escapeHtml(key.getName()) + "\n" : "") +
+                "🗓 Действует до: " + until + "\n" +
+                "Протоколы: VLESS, XHTTP, Trojan, gRPC\n\n" +
+                "🔗 Subscription-ссылка:\n" +
+                "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
+                "Продлить — «🔁 Продлить ключ», формат: " + key.getId() + " дней.";
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(text)
+                .parseMode("HTML")
+                .build();
+    }
+
+    private SendMessage buildAdminKeyLinkMessage(Long chatId, VpnKey key) {
+        String text = "🔗 Subscription-ссылка:\n<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>";
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(text)
+                .parseMode("HTML")
+                .build();
+    }
+
+    private String adminKeyStatus(VpnKey key) {
+        if (key.isRevoked() || key.getStatus() == VpnKey.Status.REVOKED) {
+            return "🛑 отозван (продлите, чтобы включить)";
+        }
+        return switch (key.getStatus()) {
+            case ACTIVE -> "✅ активен";
+            case PENDING -> "⏳ выпускается";
+            case FAILED -> "⚠️ ошибка";
+            case REVOKED -> "🛑 отозван";
+        };
+    }
+
+    private Long parseLong(String raw) {
+        if (raw == null) return null;
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

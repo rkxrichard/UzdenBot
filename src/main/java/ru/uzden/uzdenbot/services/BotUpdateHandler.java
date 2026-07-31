@@ -270,6 +270,27 @@ public class BotUpdateHandler {
                             "Отправьте @username или telegram id пользователя, для которого нужно создать отдельный RU+EU ключ.\n\nОтмена (или /cancel) — отмена."));
                 }
             }
+            case "ADMIN_CREATE_KEY" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.CREATE_ADMIN_KEY);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "🆕 Создание ключа.\nОтправьте срок в днях и имя через пробел, например:\n\n30 Клиент Иван\n\n" +
+                                    "Будет создан ключ на все протоколы (VLESS, XHTTP, Trojan, gRPC), ссылку пришлю сюда.\n\nОтмена (или /cancel) — отмена."));
+                }
+            }
+            case "ADMIN_RENEW_KEY" -> {
+                if (isAdmin) {
+                    adminStateService.set(chatId, AdminAction.RENEW_ADMIN_KEY);
+                    out.add(BotMessageFactory.simpleMessage(chatId,
+                            "🔁 Продление ключа.\nОтправьте ID ключа и число дней через пробел, например:\n\n42 30\n\n" +
+                                    "ID можно посмотреть в «📃 Созданные ключи».\n\nОтмена (или /cancel) — отмена."));
+                }
+            }
+            case "ADMIN_LIST_KEYS" -> {
+                if (isAdmin) {
+                    out.add(adminFlowService.buildAdminKeysMessage(chatId));
+                }
+            }
             case "ADMIN_CREATE_REF_LINK" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.CREATE_REFERRAL_LINK);

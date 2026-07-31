@@ -59,6 +59,19 @@ public class VpnKey {
     @Column(name = "is_revoked", nullable = false)
     private boolean revoked = false;
 
+    /**
+     * Человекочитаемое имя ключа (задаётся админом при ручном создании). Только для отображения в боте.
+     */
+    @Column(name = "name", columnDefinition = "text")
+    private String name;
+
+    /**
+     * Ключ создан админом вручную (standalone, не привязан к покупке). Управляется только через админ-панель:
+     * не считается в лимите ключей пользователя, не показывается в «Мои ключи», без авто-напоминаний и авто-очистки.
+     */
+    @Column(name = "created_by_admin", nullable = false)
+    private boolean createdByAdmin = false;
+
     /* ===== связь с 3x-ui/Xray ===== */
 
     /**

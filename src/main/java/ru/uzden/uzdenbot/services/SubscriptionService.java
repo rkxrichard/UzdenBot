@@ -163,6 +163,11 @@ public class SubscriptionService {
         }
         java.util.LinkedHashMap<Long, User> map = new java.util.LinkedHashMap<>();
         for (Subscription sub : active) {
+            VpnKey subKey = sub.getVpnKey();
+            if (subKey != null && subKey.isCreatedByAdmin()) {
+                // Подписки на админ-ключи не относятся к обычным пользователям — пропускаем.
+                continue;
+            }
             User user = sub.getUser();
             if (user == null || user.isDisabled() || user.getTelegramId() == null) {
                 continue;

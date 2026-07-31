@@ -126,6 +126,18 @@ public class BotMenuService {
                 .text("🌉 Создать RU+EU ключ")
                 .callbackData("ADMIN_CREATE_RU_EU_KEY")
                 .build();
+        InlineKeyboardButton bCreateAdminKey = InlineKeyboardButton.builder()
+                .text("🆕 Создать ключ")
+                .callbackData("ADMIN_CREATE_KEY")
+                .build();
+        InlineKeyboardButton bRenewAdminKey = InlineKeyboardButton.builder()
+                .text("🔁 Продлить ключ")
+                .callbackData("ADMIN_RENEW_KEY")
+                .build();
+        InlineKeyboardButton bListAdminKeys = InlineKeyboardButton.builder()
+                .text("📃 Созданные ключи")
+                .callbackData("ADMIN_LIST_KEYS")
+                .build();
         InlineKeyboardButton bCreateReferralLink = InlineKeyboardButton.builder()
                 .text("🔗 Создать реф. ссылку")
                 .callbackData("ADMIN_CREATE_REF_LINK")
@@ -170,6 +182,9 @@ public class BotMenuService {
                         List.of(bActiveUsers),
                         List.of(bBroadcast),
                         List.of(bCreateRuEuKey),
+                        List.of(bCreateAdminKey),
+                        List.of(bRenewAdminKey),
+                        List.of(bListAdminKeys),
                         List.of(bCreateReferralLink),
                         List.of(bReferralStats),
                         List.of(bResetReferralCounter),

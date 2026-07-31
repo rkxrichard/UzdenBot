@@ -49,6 +49,10 @@ public class VpnKeyCleanupService {
         List<VpnKey> candidates = vpnKeyRepository.findActiveOlderThan(border);
         int removed = 0;
         for (VpnKey key : candidates) {
+            if (key.isCreatedByAdmin()) {
+                // Админ-ключи никогда не удаляем авто-очисткой — управляются только вручную.
+                continue;
+            }
             OptionalLong traffic = vpnKeyService.getClientTrafficEverywhere(key);
             if (traffic.isEmpty()) {
                 continue;

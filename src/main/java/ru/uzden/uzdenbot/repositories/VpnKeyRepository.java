@@ -51,6 +51,7 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
            select k from VpnKey k
            where k.user.id = :userId
              and k.revoked = false
+             and k.createdByAdmin = false
              and k.status <> ru.uzden.uzdenbot.entities.VpnKey$Status.REVOKED
            order by k.createdAt asc
            """)
@@ -60,6 +61,7 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
            select k from VpnKey k
            where k.user.id = :userId
              and k.revoked = false
+             and k.createdByAdmin = false
              and k.status <> ru.uzden.uzdenbot.entities.VpnKey$Status.REVOKED
            order by k.createdAt asc
            """)
@@ -77,6 +79,7 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
            select count(k) from VpnKey k
            where k.user.id = :userId
              and k.revoked = false
+             and k.createdByAdmin = false
              and k.status in (ru.uzden.uzdenbot.entities.VpnKey$Status.PENDING,
                               ru.uzden.uzdenbot.entities.VpnKey$Status.ACTIVE,
                               ru.uzden.uzdenbot.entities.VpnKey$Status.FAILED)
@@ -118,4 +121,9 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
            order by k.createdAt asc
            """)
     List<VpnKey> findRevokedKeys();
+
+    /**
+     * Все ключи, созданные админом вручную (для листинга/продления в админ-панели), новые сверху.
+     */
+    List<VpnKey> findByCreatedByAdminTrueOrderByCreatedAtDesc();
 }

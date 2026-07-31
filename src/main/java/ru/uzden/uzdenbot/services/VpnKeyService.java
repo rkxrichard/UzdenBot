@@ -214,6 +214,70 @@ public class VpnKeyService {
         return finalizeIssueOutsideTx(key.getId());
     }
 
+    /**
+     * Создать standalone-ключ вручную из админ-панели (DEFAULT backend: VLESS/XHTTP/Trojan/gRPC).
+     * Ключ принадлежит в БД администратору-владельцу (owner), но помечен createdByAdmin:
+     * лимит ключей на пользователя не проверяется, ключ не попадает в «Мои ключи» и авто-джобы.
+     * Подписку (срок действия) назначает вызывающий код отдельно.
+     */
+    public VpnKey issueAdminKey(User owner, String name) {
+        if (owner == null || owner.getId() == null) {
+            throw new IllegalArgumentException("Owner is required");
+        }
+        VpnKey key = tx.execute(status -> createAdminPendingKeyTx(owner.getId(), name));
+        return finalizeIssueOutsideTx(key.getId());
+    }
+
+    /**
+     * Продлить/переактивировать админ-ключ по id и продлить его подписку на days дней.
+     * Если ключ был отозван (срок истёк и джоба его сняла) — снимаем отзыв и заново
+     * провижаним клиента в 3x-ui (addClient идемпотентен). Возвращает ACTIVE-ключ со свежей ссылкой.
+     */
+    public VpnKey renewAdminKey(long keyId, int days) {
+        if (days <= 0) {
+            throw new IllegalArgumentException("days must be positive");
+        }
+        VpnKey prepared = tx.execute(status -> prepareAdminKeyForRenewTx(keyId));
+        subscriptionService.extendSubscriptionForKey(prepared.getUser(), prepared, days);
+        return finalizeIssueOutsideTx(keyId);
+    }
+
+    public List<VpnKey> listAdminCreatedKeys() {
+        return vpnKeyRepository.findByCreatedByAdminTrueOrderByCreatedAtDesc();
+    }
+
+    private VpnKey createAdminPendingKeyTx(Long userId, String name) {
+        userRepository.lockUser(userId);
+        // Лимит ключей намеренно НЕ проверяем — админ создаёт ключи в обход лимита.
+        VpnKey pending = buildPendingKey(userId, VpnKey.Backend.DEFAULT);
+        pending.setName(normalizeKeyName(name));
+        pending.setCreatedByAdmin(true);
+        return vpnKeyRepository.saveAndFlush(pending);
+    }
+
+    private VpnKey prepareAdminKeyForRenewTx(long keyId) {
+        VpnKey key = vpnKeyRepository.findById(keyId)
+                .orElseThrow(() -> new IllegalStateException("Ключ не найден"));
+        if (!key.isCreatedByAdmin()) {
+            throw new IllegalStateException("Ключ " + keyId + " не является админ-ключом");
+        }
+        userRepository.lockUser(key.getUser().getId());
+        if (key.isRevoked() || key.getStatus() == VpnKey.Status.REVOKED) {
+            key.setRevoked(false);
+            key.setStatus(VpnKey.Status.PENDING);
+            key.setLastError(null);
+            vpnKeyRepository.save(key);
+        }
+        return key;
+    }
+
+    private String normalizeKeyName(String name) {
+        if (name == null) return null;
+        String trimmed = name.trim();
+        if (trimmed.isEmpty()) return null;
+        return trimmed.length() > 100 ? trimmed.substring(0, 100) : trimmed;
+    }
+
     public void revokeKeyForUser(User user, long keyId) {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("User is required");

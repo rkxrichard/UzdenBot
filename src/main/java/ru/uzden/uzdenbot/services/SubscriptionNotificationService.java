@@ -33,6 +33,11 @@ public class SubscriptionNotificationService {
     public void notifyExpiringSubscriptions() {
         List<Subscription> active = subscriptionRepository.findByEndDateAfter(LocalDateTime.now());
         for (Subscription sub : active) {
+            VpnKey subKey = sub.getVpnKey();
+            if (subKey != null && subKey.isCreatedByAdmin()) {
+                // Админ-ключи продлеваются только вручную через админ-панель — без авто-напоминаний.
+                continue;
+            }
             User user = sub.getUser();
             if (user == null || user.isDisabled() || user.getTelegramId() == null) {
                 continue;
