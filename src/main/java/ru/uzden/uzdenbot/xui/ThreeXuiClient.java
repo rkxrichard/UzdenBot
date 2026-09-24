@@ -506,7 +506,54 @@ public class ThreeXuiClient {
 
     /* ============================ http ============================ */
 
+    /**
+     * 3x-ui (v2.x) на запрос к /panel/api/* с протухшей/невалидной сессией отвечает
+     * НЕ 401, а пустым 404 (checkAPIAuth → AbortWithStatus(404)). Поэтому любой 401/403/404
+     * от API считаем возможным протуханием куки: один раз перелогиниваемся и повторяем запрос.
+     * Если после свежего логина снова 404 — это настоящий "не найден", пробрасываем как есть.
+     */
+    private <T> T withSessionRetry(Supplier<T> call) {
+        ensureLoggedIn();
+        String cookieUsed = authCookie;
+        try {
+            return call.get();
+        } catch (HttpClientErrorException e) {
+            if (!isSessionError(e)) throw e;
+            loginLock.lock();
+            try {
+                // если параллельный поток уже перелогинился — просто используем новую куку
+                if (authCookie == null || authCookie.equals(cookieUsed)) {
+                    log.info("3x-ui responded {} — session likely expired, re-login", e.getStatusCode().value());
+                    this.authCookie = null;
+                    doLogin();
+                }
+            } finally {
+                loginLock.unlock();
+            }
+            return call.get();
+        }
+    }
+
+    private boolean isSessionError(HttpClientErrorException e) {
+        return isAuthError(e) || e.getStatusCode() == HttpStatus.NOT_FOUND;
+    }
+
     private String getWithAuth(String path) {
+        return withSessionRetry(() -> rawGetWithAuth(path));
+    }
+
+    private String postFormWithAuth(String path, MultiValueMap<String, String> form) {
+        return withSessionRetry(() -> rawPostFormWithAuth(path, form));
+    }
+
+    private void postJsonWithAuth(String path, String jsonBody) {
+        withSessionRetry(() -> {
+            rawPostJsonWithAuth(path, jsonBody);
+            return null;
+        });
+    }
+
+    private String rawGetWithAuth(String path) {
         return rest.get()
                 .uri(url(path))
                 .header(HttpHeaders.COOKIE, authCookie)
@@ -517,7 +564,7 @@ public class ThreeXuiClient {
                 .body(String.class);
     }
 
-    private String postFormWithAuth(String path, MultiValueMap<String, String> form) {
+    private String rawPostFormWithAuth(String path, MultiValueMap<String, String> form) {
         return rest.post()
                 .uri(url(path))
                 .header(HttpHeaders.COOKIE, authCookie)
@@ -530,7 +577,7 @@ public class ThreeXuiClient {
                 .body(String.class);
     }
 
-    private void postJsonWithAuth(String path, String jsonBody) {
+    private void rawPostJsonWithAuth(String path, String jsonBody) {
         rest.post()
                 .uri(url(path))
                 .header(HttpHeaders.COOKIE, authCookie)
