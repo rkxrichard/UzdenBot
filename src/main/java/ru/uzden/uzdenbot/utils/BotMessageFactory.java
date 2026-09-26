@@ -22,6 +22,10 @@ public final class BotMessageFactory {
                 .chatId(chatId.toString())
                 .messageId(messageId)
                 .text(sm.getText())
+                // без этого HTML-разметка (<b>, <code>, <blockquote>) показывается сырыми тегами
+                .parseMode(sm.getParseMode())
+                .entities(sm.getEntities())
+                .disableWebPagePreview(sm.getDisableWebPagePreview())
                 .replyMarkup((InlineKeyboardMarkup) sm.getReplyMarkup())
                 .build();
     }

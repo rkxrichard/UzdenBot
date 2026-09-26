@@ -44,6 +44,7 @@ public class BotMenuService {
     private String supportUsername;
 
     private static final DateTimeFormatter DT_FMT   = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+    private static final DateTimeFormatter DATE_ONLY_FMT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     public SendMessage mainMenu(Long chatId, boolean isAdmin, User user) {
         vpnKeyService.ensureKeyForActiveSubscription(user);
@@ -464,78 +465,43 @@ public class BotMenuService {
         List<VpnKey> keys = vpnKeyService.listUserKeys(user);
         int maxKeys = vpnKeyService.getMaxKeysPerUser();
 
-        StringBuilder text = new StringBuilder("<b>🔑 Мои ключи</b>\n━━━━━━━━━━━━\n");
+        StringBuilder text = new StringBuilder("<b>🔑 Мои ключи</b>\n");
         if (keys.isEmpty()) {
-            text.append("Пока нет ни одного ключа.\n\nНажмите «Добавить ключ», чтобы выпустить первый доступ.");
+            text.append("\nУ вас пока нет ключей.\n")
+                    .append("Нажмите <b>«➕ Добавить ключ»</b>, чтобы получить доступ.");
         } else {
-            text.append("Нажмите нужную кнопку под ключом: получить ссылку, продлить, заменить или удалить.\n");
             for (int i = 0; i < keys.size(); i++) {
-                VpnKey key = keys.get(i);
-                text.append("\n\n<b>🔑 Ключ №")
-                        .append(i + 1)
-                        .append("</b>\n")
-                        .append("Тип: ")
-                        .append(keyBackendLabel(key))
-                        .append("\n")
-                        .append("Статус: ")
-                        .append(keyStatusLabel(key))
-                        .append("\n")
-                        .append("Срок: ")
-                        .append(keyDaysLeftText(key));
+                text.append("\n").append(keyCard(keys.get(i), i + 1, keys.size() > 1));
             }
+            text.append("\n<i>Выберите действие под ключом 👇</i>");
         }
-        if (keys.size() < maxKeys) {
-            text.append("\n\nМожно добавить ещё ключ: ")
-                    .append(keys.size())
-                    .append("/")
-                    .append(maxKeys);
-        }
+        text.append("\n\n<i>Ключей: ").append(keys.size()).append(" из ").append(maxKeys).append("</i>");
 
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        boolean numbered = keys.size() > 1;
         for (int i = 0; i < keys.size(); i++) {
             VpnKey key = keys.get(i);
+            String n = numbered ? " №" + (i + 1) : "";
             boolean requiresSubscription = vpnKeyService.requiresActiveSubscription(key);
-            InlineKeyboardButton bGet = InlineKeyboardButton.builder()
-                    .text("📋 Получить ссылку")
-                    .callbackData("KEY_GET:" + key.getId())
-                    .build();
-            InlineKeyboardButton bReplace = InlineKeyboardButton.builder()
-                    .text("♻️ Заменить ключ")
-                    .callbackData("KEY_REPLACE:" + key.getId())
-                    .build();
-            if (requiresSubscription) {
-                InlineKeyboardButton bRenew = InlineKeyboardButton.builder()
-                        .text("🔁 Продлить")
-                        .callbackData("KEY_RENEW:" + key.getId())
-                        .build();
-                rows.add(List.of(bGet, bRenew));
-            } else {
-                rows.add(List.of(bGet, bReplace));
-            }
-            if (!subscriptionService.hasActiveSubscriptionForKey(key)) {
-                InlineKeyboardButton bDelete = InlineKeyboardButton.builder()
-                        .text("🗑 Удалить ключ")
-                        .callbackData("KEY_DELETE:" + key.getId())
-                        .build();
-                rows.add(requiresSubscription ? List.of(bReplace, bDelete) : List.of(bDelete));
-            } else {
-                rows.add(List.of(bReplace));
-            }
+            InlineKeyboardButton bGet = button("📋 Ссылка" + n, "KEY_GET:" + key.getId());
+            InlineKeyboardButton bReplace = button("♻️ Заменить" + n, "KEY_REPLACE:" + key.getId());
+            InlineKeyboardButton bRenew = button("🔁 Продлить" + n, "KEY_RENEW:" + key.getId());
+            InlineKeyboardButton bDelete = button("🗑 Удалить" + n, "KEY_DELETE:" + key.getId());
+            boolean canDelete = !subscriptionService.hasActiveSubscriptionForKey(key);
+
+            rows.add(requiresSubscription ? List.of(bGet, bRenew) : List.of(bGet, bReplace));
+            List<InlineKeyboardButton> second = new ArrayList<>();
+            if (requiresSubscription) second.add(bReplace);
+            if (canDelete) second.add(bDelete);
+            if (!second.isEmpty()) rows.add(second);
         }
 
+        List<InlineKeyboardButton> bottom = new ArrayList<>();
         if (keys.size() < maxKeys) {
-            InlineKeyboardButton bNew = InlineKeyboardButton.builder()
-                    .text("➕ Добавить ключ")
-                    .callbackData("KEY_NEW")
-                    .build();
-            rows.add(List.of(bNew));
+            bottom.add(button("➕ Добавить ключ", "KEY_NEW"));
         }
-
-        InlineKeyboardButton bBack = InlineKeyboardButton.builder()
-                .text("⬅️ На главную")
-                .callbackData("MENU_BACK")
-                .build();
-        rows.add(List.of(bBack));
+        bottom.add(button("⬅️ Назад", "MENU_BACK"));
+        rows.add(bottom);
 
         InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder()
                 .keyboard(rows)
@@ -579,13 +545,12 @@ public class BotMenuService {
 
         String created = formatInstant(target.getCreatedAt());
         Optional<Subscription> keySubOpt = subscriptionService.getActiveSubscription(target);
-        String text = "<b>🔑 Ключ №" + (index + 1) + "</b>\n" +
-                "━━━━━━━━━━━━\n" +
-                "Тип: " + keyBackendLabel(target) + "\n" +
-                "Статус: " + keyStatusLabel(target) + "\n" +
-                "Срок: " + keyDaysLeftText(target) + "\n" +
-                "Создан: " + created +
-                (keySubOpt.isPresent() ? "\n🗑 Удаление станет доступно после окончания срока" : "");
+        String text = "<b>🔑 Ключ №" + (index + 1) + "</b>\n\n" +
+                "<blockquote>" + keyStatusLabel(target) + "\n" +
+                "🗓 " + keyDaysLeftText(target) + "\n" +
+                (target.getBackend() == VpnKey.Backend.RU_EU ? "🌉 RU+EU\n" : "") +
+                "🕓 создан " + created + "</blockquote>" +
+                (keySubOpt.isPresent() ? "\n<i>Удалить ключ можно после окончания срока.</i>" : "");
 
         InlineKeyboardButton bGet = InlineKeyboardButton.builder()
                 .text("📋 Получить ссылку")
@@ -663,18 +628,15 @@ public class BotMenuService {
     private String buildKeyDeliveryText(String keyValue, boolean includeInstructions, boolean replaced) {
         StringBuilder text = new StringBuilder();
         if (replaced) {
-            text.append("🔄 Ключ заменён. Новая subscription-ссылка:\n\n");
+            text.append("♻️ <b>Ключ заменён</b>\n")
+                    .append("Старый ключ отключён — добавьте в Happ новую ссылку.\n\n");
         } else {
-            text.append("🔑 Ваша subscription-ссылка:\n\n");
+            text.append("🔗 <b>Ваша ссылка для Happ</b>\n\n");
         }
         text.append("<code>")
                 .append(BotTextUtils.escapeHtml(keyValue))
-                .append("</code>\n\n")
-                .append("📌 Скопируйте ссылку целиком и добавьте её в Happ.\n");
-        if (replaced) {
-            text.append("✅ Старый ключ отключён.\n");
-        }
-        text.append("\n")
+                .append("</code>\n")
+                .append("<i>Нажмите на ссылку — она скопируется.</i>\n\n")
                 .append(buildKeyQuickHelp());
 
         if (includeInstructions) {
@@ -685,8 +647,24 @@ public class BotMenuService {
     }
 
     private String buildKeyQuickHelp() {
-        return "♻️ Если подключение работает нестабильно, откройте «Мои ключи» и нажмите «Заменить ключ».\n" +
-                "📶 После смены Wi‑Fi или мобильной сети иногда помогает переподключить VPN.";
+        return "<blockquote>💡 Если VPN работает нестабильно — «Мои ключи» → «♻️ Заменить».\n" +
+                "📶 После смены сети переподключите VPN.</blockquote>";
+    }
+
+    /** Карточка ключа для списка «Мои ключи». */
+    private String keyCard(VpnKey key, int number, boolean showNumber) {
+        StringBuilder sb = new StringBuilder("<blockquote>");
+        sb.append("<b>").append(showNumber ? "Ключ №" + number : "Ваш ключ").append("</b> · ")
+                .append(keyStatusLabel(key)).append("\n")
+                .append("🗓 ").append(keyDaysLeftText(key));
+        if (key.getBackend() == VpnKey.Backend.RU_EU) {
+            sb.append("\n🌉 RU+EU");
+        }
+        return sb.append("</blockquote>").toString();
+    }
+
+    private static InlineKeyboardButton button(String text, String callback) {
+        return InlineKeyboardButton.builder().text(text).callbackData(callback).build();
     }
 
     private String formatDaysLeft(long daysLeft) {
@@ -765,18 +743,18 @@ public class BotMenuService {
 
     private String keyDaysLeftText(VpnKey key) {
         if (!vpnKeyService.requiresActiveSubscription(key)) {
-            return "🧪 тестовый доступ • без подписки";
+            return "🧪 тестовый доступ · без срока";
         }
         Optional<Subscription> active = subscriptionService.getActiveSubscription(key);
         if (active.isPresent()) {
             long days = subscriptionService.getDaysLeft(active.get());
-            String until = active.get().getEndDate().format(DT_FMT);
-            return formatDaysLeft(days) + " • до " + until;
+            String until = active.get().getEndDate().format(DATE_ONLY_FMT);
+            return formatDaysLeft(days) + " · до " + until;
         }
         Optional<Subscription> last = subscriptionService.getLastSubscription(key);
         if (last.isPresent() && last.get().getEndDate() != null) {
-            String endedAt = last.get().getEndDate().format(DT_FMT);
-            return "истекла • " + endedAt;
+            String endedAt = last.get().getEndDate().format(DATE_ONLY_FMT);
+            return "⌛ истёк " + endedAt;
         }
         return "нет подписки";
     }

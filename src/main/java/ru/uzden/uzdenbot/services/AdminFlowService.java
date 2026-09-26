@@ -399,39 +399,46 @@ public class AdminFlowService {
         if (keys.isEmpty()) {
             return BotMessageFactory.simpleMessage(chatId, "Созданных админом ключей пока нет.");
         }
-        StringBuilder sb = new StringBuilder("📃 Созданные ключи (" + keys.size() + "):\n");
+        StringBuilder sb = new StringBuilder("📃 <b>Созданные ключи</b> · " + keys.size() + "\n");
         for (VpnKey key : keys) {
-            sb.append("\nID ").append(key.getId());
+            sb.append("\n<blockquote><b>🆔 ").append(key.getId()).append("</b>");
             if (key.getName() != null && !key.getName().isBlank()) {
-                sb.append(" • ").append(key.getName());
+                sb.append(" · ").append(BotTextUtils.escapeHtml(key.getName()));
             }
-            sb.append("\nСтатус: ").append(adminKeyStatus(key));
+            sb.append("\n").append(adminKeyStatus(key));
             Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
             if (sub.isPresent()) {
                 long daysLeft = subscriptionService.getDaysLeft(sub.get());
-                sb.append("\nСрок: ").append(formatDaysLeft(daysLeft))
-                        .append(" (до ").append(BotTextUtils.formatDate(sub.get().getEndDate())).append(")");
+                sb.append("\n🗓 ").append(formatDaysLeft(daysLeft))
+                        .append(" · до ").append(BotTextUtils.formatDate(sub.get().getEndDate()));
             } else {
-                sb.append("\nСрок: истёк / нет подписки");
+                sb.append("\n⌛ срок истёк / нет подписки");
             }
-            sb.append("\n");
+            sb.append("</blockquote>");
         }
-        sb.append("\nПродление — «🔁 Продлить ключ», формат: ID дней (например: ")
-                .append(keys.get(0).getId()).append(" 30).");
-        return BotMessageFactory.simpleMessage(chatId, sb.toString().trim());
+        sb.append("\n<i>Продлить: «🔁 Продлить ключ» → </i><code>")
+                .append(keys.get(0).getId()).append(" 30</code> <i>(ID и дни)</i>");
+        return SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(sb.toString())
+                .parseMode("HTML")
+                .build();
     }
 
     private SendMessage buildAdminKeyDeliveryMessage(Long chatId, VpnKey key, Subscription sub) {
-        String until = sub == null ? "-" : BotTextUtils.formatDate(sub.getEndDate());
-        String text = "✅ Ключ создан.\n" +
-                "ID: " + key.getId() + "\n" +
-                (key.getName() != null && !key.getName().isBlank()
-                        ? "Имя: " + BotTextUtils.escapeHtml(key.getName()) + "\n" : "") +
-                "🗓 Действует до: " + until + "\n" +
-                "Протоколы: VLESS, XHTTP, Trojan, gRPC\n\n" +
-                "🔗 Subscription-ссылка:\n" +
-                "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n\n" +
-                "Продлить — «🔁 Продлить ключ», формат: " + key.getId() + " дней.";
+        String until = sub == null ? "—" : BotTextUtils.formatDate(sub.getEndDate());
+        boolean hasName = key.getName() != null && !key.getName().isBlank();
+        String text = "✅ <b>Ключ создан</b>\n\n" +
+                "<blockquote>" +
+                (hasName ? "👤 " + BotTextUtils.escapeHtml(key.getName()) + "\n" : "") +
+                "🆔 " + key.getId() + "\n" +
+                "🗓 до " + until + "\n" +
+                "🌐 VLESS · XHTTP · Trojan · gRPC" +
+                "</blockquote>\n\n" +
+                "🔗 <b>Ссылка для Happ</b>\n" +
+                "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n" +
+                "<i>Нажмите на ссылку — она скопируется.</i>\n\n" +
+                "<i>Продлить: «🔁 Продлить ключ» → </i><code>" + key.getId() + " 30</code>";
         return SendMessage.builder()
                 .chatId(chatId.toString())
                 .text(text)
@@ -440,7 +447,9 @@ public class AdminFlowService {
     }
 
     private SendMessage buildAdminKeyLinkMessage(Long chatId, VpnKey key) {
-        String text = "🔗 Subscription-ссылка:\n<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>";
+        String text = "🔗 <b>Ссылка для Happ</b>\n" +
+                "<code>" + BotTextUtils.escapeHtml(key.getKeyValue()) + "</code>\n" +
+                "<i>Нажмите на ссылку — она скопируется.</i>";
         return SendMessage.builder()
                 .chatId(chatId.toString())
                 .text(text)

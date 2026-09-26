@@ -93,7 +93,7 @@ class BotMenuServiceTest {
         assertTrue(callbacks.contains("KEY_RENEW:10"));
         assertTrue(callbacks.contains("KEY_REPLACE:10"));
         assertFalse(callbacks.stream().anyMatch(data -> data.startsWith("KEY_SELECT:")));
-        assertTrue(message.getText().contains("Нажмите нужную кнопку под ключом"));
+        assertTrue(message.getText().contains("Выберите действие под ключом"));
     }
 
     @Test
