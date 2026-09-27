@@ -147,6 +147,10 @@ public class BotMenuService {
                 .text("♻️ Заменить все ключи")
                 .callbackData("ADMIN_REPLACE_ALL_KEYS")
                 .build();
+        InlineKeyboardButton bSyncInbounds = InlineKeyboardButton.builder()
+                .text("🔁 Досоздать ключи на всех инбаундах")
+                .callbackData("ADMIN_SYNC_INBOUNDS")
+                .build();
         InlineKeyboardButton bCreateReferralLink = InlineKeyboardButton.builder()
                 .text("🔗 Создать реф. ссылку")
                 .callbackData("ADMIN_CREATE_REF_LINK")
@@ -195,6 +199,7 @@ public class BotMenuService {
                         List.of(bRenewAdminKey),
                         List.of(bListAdminKeys),
                         List.of(bReplaceAdminKey, bReplaceAllAdminKeys),
+                        List.of(bSyncInbounds),
                         List.of(bCreateReferralLink),
                         List.of(bReferralStats),
                         List.of(bResetReferralCounter),

@@ -72,22 +72,49 @@ public class SubscriptionPayloadService {
         return rebuilt + "#" + encodeFragment(index + ". " + protocolLabel);
     }
 
+    /**
+     * Красивое имя профиля в Happ: "ПРОТОКОЛ · ТРАНСПОРТ · SECURITY", например
+     * "VLESS · XHTTP · REALITY". Раньше метка показывала только один из трёх параметров
+     * (например, просто "XHTTP" без протокола) — из-за этого профили выглядели неряшливо
+     * и было не различить, где VLESS, а где Trojan на одном и том же транспорте.
+     */
     private String resolveProtocolLabel(String prefix, LinkedHashMap<String, String> params) {
         String lowerPrefix = prefix.toLowerCase();
+        String protocol;
         if (lowerPrefix.startsWith("trojan://")) {
-            return "Trojan";
+            protocol = "TROJAN";
+        } else if (lowerPrefix.startsWith("vmess://")) {
+            protocol = "VMESS";
+        } else if (lowerPrefix.startsWith("ss://")) {
+            protocol = "SS";
+        } else {
+            protocol = "VLESS";
         }
-        String type = params.get("type");
-        if (type == null || type.isBlank()) {
-            return "VLESS";
-        }
-        return switch (type.trim().toLowerCase()) {
+
+        String type = params.getOrDefault("type", "").trim().toLowerCase();
+        String transport = switch (type) {
+            case "", "tcp", "raw" -> "TCP";
             case "xhttp" -> "XHTTP";
-            case "grpc" -> "gRPC";
-            case "tcp" -> "VLESS";
-            case "trojan" -> "Trojan";
-            default -> type.trim().toUpperCase();
+            case "grpc" -> "GRPC";
+            case "ws" -> "WS";
+            case "httpupgrade" -> "HTTPUPGRADE";
+            case "kcp" -> "KCP";
+            case "quic" -> "QUIC";
+            default -> type.toUpperCase();
         };
+
+        String security = params.getOrDefault("security", "").trim().toLowerCase();
+        String securityLabel = switch (security) {
+            case "" -> null;
+            case "reality" -> "REALITY";
+            case "tls" -> "TLS";
+            case "none" -> null;
+            default -> security.toUpperCase();
+        };
+
+        return securityLabel == null
+                ? protocol + " · " + transport
+                : protocol + " · " + transport + " · " + securityLabel;
     }
 
     private LinkedHashMap<String, String> parseQuery(String rawQuery) {

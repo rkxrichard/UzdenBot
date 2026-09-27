@@ -620,6 +620,31 @@ public class AdminFlowService {
         return htmlMessage(chatId, "⏳ Заменяю <b>" + keys.size() + "</b> ключей… Это займёт пару минут, пришлю итог и новый список.");
     }
 
+    /**
+     * Досоздаёт всех активных клиентов на всех настроенных сейчас inbound'ах (после добавления
+     * нового inbound'а в панель). Долгая операция (по одному-двум HTTP-запросам на inbound на
+     * каждый ключ) — запускаем в фоне, чтобы не блокировать бота, и присылаем итог.
+     */
+    public SendMessage startSyncInbounds(Long chatId) {
+        if (!rotateAllRunning.compareAndSet(false, true)) {
+            return htmlMessage(chatId, "⏳ Другая массовая операция уже идёт — дождитесь итога.");
+        }
+        Thread worker = new Thread(() -> {
+            try {
+                int ok = vpnKeyService.syncActiveKeysAcrossConfiguredInbounds();
+                send(htmlMessage(chatId, "✅ <b>Синхронизация завершена</b>\nДосоздано/проверено ключей: <b>" + ok + "</b>."));
+            } catch (Exception e) {
+                log.error("Синхронизация инбаундов упала", e);
+                send(htmlMessage(chatId, "❌ Синхронизация прервана: " + BotTextUtils.escapeHtml(String.valueOf(e.getMessage()))));
+            } finally {
+                rotateAllRunning.set(false);
+            }
+        }, "admin-sync-inbounds");
+        worker.setDaemon(true);
+        worker.start();
+        return htmlMessage(chatId, "⏳ Досоздаю активные ключи на всех настроенных inbound'ах… Это может занять несколько минут, пришлю итог.");
+    }
+
     private void send(SendMessage m) {
         try {
             if (mainBotProvider != null) {

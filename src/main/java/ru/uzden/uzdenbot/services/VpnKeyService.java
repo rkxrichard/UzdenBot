@@ -344,6 +344,32 @@ public class VpnKeyService {
     }
 
     /**
+     * Досоздаёт клиента для КАЖДОГО активного ключа на ВСЕХ подписочных inbound'ах бэкенда,
+     * с которым тот ключ работает (текущий {@code XUI_SUBSCRIPTION_INBOUND_IDS} /
+     * {@code RUEU_XUI_SUBSCRIPTION_INBOUND_IDS}). Нужно после добавления нового inbound'а
+     * в панель — старые ключи иначе останутся только на тех inbound'ах, что были на момент
+     * их выпуска. Идемпотентно: на уже покрытых inbound'ах 3x-ui вернёт "Duplicate email",
+     * что клиент считает успехом, так что уже существующих клиентов это не трогает.
+     * Возвращает число ключей, для которых прошли все inbound'ы без ошибок.
+     */
+    public int syncActiveKeysAcrossConfiguredInbounds() {
+        int ok = 0;
+        for (VpnKey key : vpnKeyRepository.findAll()) {
+            if (key.isRevoked() || key.getStatus() != VpnKey.Status.ACTIVE || key.getClientUuid() == null) {
+                continue;
+            }
+            try {
+                BackendRuntime backend = backendConfig(key.getBackend());
+                issueSubscriptionLink(backend, key);
+                ok++;
+            } catch (Exception e) {
+                log.warn("Синхронизация инбаундов: ключ {} не досоздался везде: {}", key.getId(), safeMsg(e));
+            }
+        }
+        return ok;
+    }
+
+    /**
      * Клиент, реально существующий в панели 3x-ui на одном из подписочных inbound'ов,
      * но не соответствующий ни одному ключу в БД бота — то есть добавленный вручную
      * через веб-интерфейс панели, а не выпущенный ботом.

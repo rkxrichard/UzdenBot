@@ -24,9 +24,9 @@ class SubscriptionPayloadServiceTest {
         String decoded = new String(Base64.getDecoder().decode(rewritten), StandardCharsets.UTF_8);
 
         assertTrue(decoded.contains("group=WayGuard"));
-        assertTrue(decoded.contains("#1.%20XHTTP"));
-        assertTrue(decoded.contains("#2.%20VLESS"));
-        assertTrue(decoded.contains("#3.%20gRPC"));
-        assertTrue(decoded.contains("#4.%20Trojan"));
+        assertTrue(decoded.contains("#1.%20VLESS%20%C2%B7%20XHTTP%20%C2%B7%20REALITY"));
+        assertTrue(decoded.contains("#2.%20VLESS%20%C2%B7%20TCP%20%C2%B7%20REALITY"));
+        assertTrue(decoded.contains("#3.%20VLESS%20%C2%B7%20GRPC%20%C2%B7%20REALITY"));
+        assertTrue(decoded.contains("#4.%20TROJAN%20%C2%B7%20TCP%20%C2%B7%20TLS"));
     }
 }

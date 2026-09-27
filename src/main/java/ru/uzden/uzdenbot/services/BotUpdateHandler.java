@@ -311,6 +311,11 @@ public class BotUpdateHandler {
                     out.add(BotMessageFactory.simpleMessage(chatId, "Отменено."));
                 }
             }
+            case "ADMIN_SYNC_INBOUNDS" -> {
+                if (isAdmin) {
+                    out.add(adminFlowService.startSyncInbounds(chatId));
+                }
+            }
             case "ADMIN_CREATE_REF_LINK" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.CREATE_REFERRAL_LINK);
