@@ -260,6 +260,81 @@ public class VpnKeyService {
         return link;
     }
 
+    /**
+     * Замена (ротация) админ-ключа «на месте»: ID, имя и срок сохраняются, но выдаётся новый UUID
+     * и новая ссылка подписки. Старые клиенты в 3x-ui отключаются только после успешного выпуска новых;
+     * если выпуск упал — ключ откатывается к старым значениям и продолжает работать.
+     */
+    public VpnKey rotateAdminKey(long keyId) {
+        RotateContext ctx = tx.execute(status -> rotateAdminKeyTx(keyId));
+        VpnKey fresh;
+        try {
+            fresh = finalizeIssueOutsideTx(keyId);
+        } catch (RuntimeException e) {
+            tx.execute(status -> restoreAfterFailedRotateTx(ctx));
+            throw e;
+        }
+        try {
+            disableClientEverywhere(ctx.backend, ctx.inboundId, ctx.oldClientUuid);
+        } catch (Exception e) {
+            log.warn("Ключ {} заменён, но старые клиенты не отключились: {}", keyId, safeMsg(e));
+        }
+        return fresh;
+    }
+
+    /** Админ-ключи, которые можно заменить (не отозванные, активные). */
+    public List<VpnKey> listRotatableAdminKeys() {
+        return listAdminCreatedKeys().stream()
+                .filter(k -> !k.isRevoked() && k.getStatus() == VpnKey.Status.ACTIVE)
+                .toList();
+    }
+
+    private RotateContext rotateAdminKeyTx(long keyId) {
+        VpnKey key = vpnKeyRepository.findById(keyId)
+                .orElseThrow(() -> new IllegalStateException("Ключ " + keyId + " не найден"));
+        if (!key.isCreatedByAdmin()) {
+            throw new IllegalStateException("Ключ " + keyId + " не является созданным через админку");
+        }
+        if (key.isRevoked() || key.getStatus() == VpnKey.Status.REVOKED) {
+            throw new IllegalStateException("Ключ " + keyId + " отозван — сначала продлите его");
+        }
+        userRepository.lockUser(key.getUser().getId());
+
+        RotateContext ctx = new RotateContext(key.getId(), key.getBackend(), key.getInboundId(),
+                key.getClientUuid(), key.getClientEmail(), key.getKeyValue());
+
+        UUID newUuid = UUID.randomUUID();
+        key.setClientUuid(newUuid);
+        key.setClientEmail(rotatedEmail(key.getClientEmail(), newUuid));
+        key.setKeyValue("PENDING:" + newUuid);
+        key.setStatus(VpnKey.Status.PENDING);
+        key.setLastError(null);
+        vpnKeyRepository.save(key);
+        return ctx;
+    }
+
+    private Void restoreAfterFailedRotateTx(RotateContext ctx) {
+        vpnKeyRepository.findById(ctx.keyId).ifPresent(key -> {
+            key.setClientUuid(ctx.oldClientUuid);
+            key.setClientEmail(ctx.oldClientEmail);
+            key.markActive(ctx.oldKeyValue);
+            vpnKeyRepository.save(key);
+        });
+        return null;
+    }
+
+    static String rotatedEmail(String oldEmail, UUID newUuid) {
+        String shortUuid = newUuid.toString().substring(0, 8);
+        if (oldEmail == null || oldEmail.isBlank()) return "admin_" + shortUuid;
+        if (oldEmail.matches(".*_[0-9a-f]{8}$")) {
+            return oldEmail.substring(0, oldEmail.length() - 8) + shortUuid;
+        }
+        return oldEmail + "_" + shortUuid;
+    }
+
+    private record RotateContext(long keyId, VpnKey.Backend backend, Long inboundId,
+                                 UUID oldClientUuid, String oldClientEmail, String oldKeyValue) {}
+
     public List<VpnKey> listAdminCreatedKeys() {
         return vpnKeyRepository.findByCreatedByAdminTrueOrderByCreatedAtDesc();
     }

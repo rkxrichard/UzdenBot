@@ -291,6 +291,26 @@ public class BotUpdateHandler {
                     out.addAll(adminFlowService.buildAdminKeysMessages(chatId));
                 }
             }
+            case "ADMIN_REPLACE_KEY" -> {
+                if (isAdmin) {
+                    out.add(adminFlowService.replaceAdminKeyPrompt(chatId));
+                }
+            }
+            case "ADMIN_REPLACE_ALL_KEYS" -> {
+                if (isAdmin) {
+                    out.add(adminFlowService.replaceAllConfirm(chatId));
+                }
+            }
+            case "ADMIN_REPLACE_ALL_CONFIRM" -> {
+                if (isAdmin) {
+                    out.add(adminFlowService.startReplaceAll(chatId));
+                }
+            }
+            case "ADMIN_REPLACE_ALL_CANCEL" -> {
+                if (isAdmin) {
+                    out.add(BotMessageFactory.simpleMessage(chatId, "Отменено."));
+                }
+            }
             case "ADMIN_CREATE_REF_LINK" -> {
                 if (isAdmin) {
                     adminStateService.set(chatId, AdminAction.CREATE_REFERRAL_LINK);

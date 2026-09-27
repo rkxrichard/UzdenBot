@@ -32,6 +32,12 @@ public class AdminFlowService {
     @Value("${telegram.bot.username:}")
     private String botUsername;
 
+    /** MainBot берём лениво: он сам зависит (через BotUpdateHandler) от этого сервиса. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.beans.factory.ObjectProvider<ru.uzden.uzdenbot.bots.MainBot> mainBotProvider;
+
+    private final java.util.concurrent.atomic.AtomicBoolean rotateAllRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     public List<BotApiMethod<?>> handleAdminMessage(Long chatId, Message message, AdminAction action) {
         List<BotApiMethod<?>> out = new ArrayList<>();
         String text = message == null ? null : message.getText();
@@ -50,6 +56,7 @@ public class AdminFlowService {
             case DELETE_REFERRAL_LINK -> handleDeleteReferralLink(chatId, trimmed, out);
             case CREATE_ADMIN_KEY -> handleCreateAdminKey(chatId, trimmed, out);
             case RENEW_ADMIN_KEY -> handleRenewAdminKey(chatId, trimmed, out);
+            case REPLACE_ADMIN_KEY -> handleReplaceAdminKey(chatId, trimmed, out);
             default -> {
             }
         }
@@ -408,30 +415,7 @@ public class AdminFlowService {
         StringBuilder sb = new StringBuilder("📃 <b>Созданные ключи</b> · " + keys.size() + "\n"
                 + "<i>Нажмите на ссылку — она скопируется.</i>\n");
         for (VpnKey key : keys) {
-            StringBuilder card = new StringBuilder();
-            card.append("\n<blockquote><b>🆔 ").append(key.getId()).append("</b>");
-            if (key.getName() != null && !key.getName().isBlank()) {
-                card.append(" · <b>").append(BotTextUtils.escapeHtml(key.getName())).append("</b>");
-            }
-            card.append("\n").append(adminKeyStatus(key));
-            Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
-            if (sub.isPresent()) {
-                long daysLeft = subscriptionService.getDaysLeft(sub.get());
-                card.append("\n🗓 ").append(formatDaysLeft(daysLeft))
-                        .append(" · до ").append(sub.get().getEndDate().toLocalDate().format(DATE_ONLY));
-            } else {
-                card.append("\n⌛ срок истёк / нет подписки");
-            }
-            String link = null;
-            try {
-                link = vpnKeyService.currentSubscriptionLink(key);
-            } catch (Exception e) {
-                log.warn("Не удалось собрать ссылку для ключа {}: {}", key.getId(), e.getMessage());
-            }
-            card.append("</blockquote>");
-            if (link != null) {
-                card.append("\n<code>").append(BotTextUtils.escapeHtml(link)).append("</code>\n");
-            }
+            String card = "\n" + adminKeyCard(key);
             if (sb.length() + card.length() > limit) {
                 out.add(htmlMessage(chatId, sb.toString()));
                 sb = new StringBuilder();
@@ -440,8 +424,179 @@ public class AdminFlowService {
         }
         sb.append("\n<i>Продлить: «🔁 Продлить ключ» → </i><code>")
                 .append(keys.get(0).getId()).append(" 30</code> <i>(ID и дни)</i>");
-        out.add(htmlMessage(chatId, sb.toString()));
+        SendMessage last = htmlMessage(chatId, sb.toString());
+        last.setReplyMarkup(adminKeysKeyboard());
+        out.add(last);
         return out;
+    }
+
+    public static org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup adminKeysKeyboard() {
+        var one = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
+                .text("♻️ Заменить ключ").callbackData("ADMIN_REPLACE_KEY").build();
+        var all = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
+                .text("♻️ Заменить все").callbackData("ADMIN_REPLACE_ALL_KEYS").build();
+        var refresh = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
+                .text("🔄 Обновить список").callbackData("ADMIN_LIST_KEYS").build();
+        return org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup.builder()
+                .keyboard(List.of(List.of(one, all), List.of(refresh)))
+                .build();
+    }
+
+    /* ======================= замена админ-ключей ======================= */
+
+    public SendMessage replaceAdminKeyPrompt(Long chatId) {
+        adminStateService.set(chatId, AdminAction.REPLACE_ADMIN_KEY);
+        return htmlMessage(chatId,
+                "♻️ <b>Замена ключа</b>\n\n" +
+                "Отправьте <b>название</b> ключа (как в списке) или его <b>ID</b>.\n" +
+                "Ключ получит новую ссылку, старая перестанет работать. Срок и ID сохранятся.\n\n" +
+                "<i>Отмена — /cancel</i>");
+    }
+
+    private void handleReplaceAdminKey(Long chatId, String text, List<BotApiMethod<?>> out) {
+        if (text == null || text.isBlank()) {
+            out.add(htmlMessage(chatId, "Отправьте название или ID ключа. <i>Отмена — /cancel</i>"));
+            return;
+        }
+        List<VpnKey> candidates = findAdminKeysByNameOrId(text.trim());
+        if (candidates.isEmpty()) {
+            out.add(htmlMessage(chatId, "❌ Ключ «" + BotTextUtils.escapeHtml(text.trim()) + "» не найден среди созданных.\n" +
+                    "Проверьте название в «📃 Созданные ключи» или отправьте ID. <i>Отмена — /cancel</i>"));
+            return;
+        }
+        if (candidates.size() > 1) {
+            StringBuilder sb = new StringBuilder("Нашлось несколько ключей — отправьте <b>ID</b> нужного:\n");
+            for (VpnKey k : candidates) {
+                sb.append("\n<code>").append(k.getId()).append("</code> · ")
+                        .append(BotTextUtils.escapeHtml(k.getName() == null ? "" : k.getName()));
+            }
+            out.add(htmlMessage(chatId, sb.toString()));
+            return;
+        }
+        VpnKey target = candidates.get(0);
+        try {
+            VpnKey fresh = vpnKeyService.rotateAdminKey(target.getId());
+            adminStateService.clear(chatId);
+            out.add(htmlMessage(chatId, "✅ <b>Ключ заменён</b>\n\n" + adminKeyCard(fresh) +
+                    "\n<i>Старая ссылка больше не работает — отправьте человеку новую.</i>"));
+        } catch (Exception e) {
+            log.warn("Не удалось заменить админ-ключ {}: {}", target.getId(), e.getMessage());
+            out.add(htmlMessage(chatId, "❌ Не удалось заменить ключ: " + BotTextUtils.escapeHtml(String.valueOf(e.getMessage())) +
+                    "\nСтарая ссылка продолжает работать."));
+        }
+    }
+
+    private List<VpnKey> findAdminKeysByNameOrId(String query) {
+        List<VpnKey> all = vpnKeyService.listAdminCreatedKeys();
+        Long id = parseLong(query);
+        if (id != null) {
+            List<VpnKey> byId = all.stream().filter(k -> id.equals(k.getId())).toList();
+            if (!byId.isEmpty()) return byId;
+        }
+        String q = query.toLowerCase(java.util.Locale.ROOT);
+        List<VpnKey> exact = all.stream()
+                .filter(k -> k.getName() != null && k.getName().trim().toLowerCase(java.util.Locale.ROOT).equals(q))
+                .toList();
+        if (!exact.isEmpty()) return exact;
+        return all.stream()
+                .filter(k -> k.getName() != null && k.getName().toLowerCase(java.util.Locale.ROOT).contains(q))
+                .toList();
+    }
+
+    public SendMessage replaceAllConfirm(Long chatId) {
+        int n = vpnKeyService.listRotatableAdminKeys().size();
+        var yes = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
+                .text("✅ Да, заменить все").callbackData("ADMIN_REPLACE_ALL_CONFIRM").build();
+        var no = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
+                .text("✖️ Отмена").callbackData("ADMIN_REPLACE_ALL_CANCEL").build();
+        SendMessage sm = htmlMessage(chatId,
+                "♻️ <b>Заменить все созданные ключи?</b>\n\n" +
+                "Активных ключей: <b>" + n + "</b>. Каждый получит новую ссылку, старые перестанут работать.\n" +
+                "ID, названия и сроки сохранятся. Отозванные ключи не трогаю.\n\n" +
+                "<i>После замены пришлю новый список со ссылками.</i>");
+        sm.setReplyMarkup(org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup.builder()
+                .keyboard(List.of(List.of(yes, no))).build());
+        return sm;
+    }
+
+    /**
+     * Запускает замену всех ключей в фоне (это десятки запросов к панели — не блокируем бота),
+     * по окончании присылает итог и свежий список со ссылками.
+     */
+    public SendMessage startReplaceAll(Long chatId) {
+        if (!rotateAllRunning.compareAndSet(false, true)) {
+            return htmlMessage(chatId, "⏳ Замена уже идёт — дождитесь итога.");
+        }
+        List<VpnKey> keys = vpnKeyService.listRotatableAdminKeys();
+        Thread worker = new Thread(() -> {
+            int ok = 0;
+            List<String> failed = new ArrayList<>();
+            try {
+                for (VpnKey k : keys) {
+                    try {
+                        vpnKeyService.rotateAdminKey(k.getId());
+                        ok++;
+                    } catch (Exception e) {
+                        log.warn("Замена всех: ключ {} не заменён: {}", k.getId(), e.getMessage());
+                        failed.add(k.getId() + (k.getName() != null ? " · " + k.getName() : ""));
+                    }
+                }
+                StringBuilder sb = new StringBuilder("✅ <b>Замена завершена</b>\nЗаменено: <b>")
+                        .append(ok).append("</b> из ").append(keys.size());
+                if (!failed.isEmpty()) {
+                    sb.append("\n\n⚠️ Не удалось (старые ссылки у них работают):");
+                    failed.forEach(f -> sb.append("\n• ").append(BotTextUtils.escapeHtml(f)));
+                }
+                send(htmlMessage(chatId, sb.toString()));
+                for (SendMessage m : buildAdminKeysMessages(chatId)) {
+                    send(m);
+                }
+            } catch (Exception e) {
+                log.error("Замена всех админ-ключей упала", e);
+                send(htmlMessage(chatId, "❌ Замена прервана: " + BotTextUtils.escapeHtml(String.valueOf(e.getMessage()))));
+            } finally {
+                rotateAllRunning.set(false);
+            }
+        }, "admin-rotate-all");
+        worker.setDaemon(true);
+        worker.start();
+        return htmlMessage(chatId, "⏳ Заменяю <b>" + keys.size() + "</b> ключей… Это займёт пару минут, пришлю итог и новый список.");
+    }
+
+    private void send(SendMessage m) {
+        try {
+            if (mainBotProvider != null) {
+                mainBotProvider.getObject().execute(m);
+            }
+        } catch (Exception e) {
+            log.warn("Не удалось отправить сообщение админу: {}", e.getMessage());
+        }
+    }
+
+    private String adminKeyCard(VpnKey key) {
+        StringBuilder card = new StringBuilder("<blockquote><b>🆔 ").append(key.getId()).append("</b>");
+        if (key.getName() != null && !key.getName().isBlank()) {
+            card.append(" · <b>").append(BotTextUtils.escapeHtml(key.getName())).append("</b>");
+        }
+        card.append("\n").append(adminKeyStatus(key));
+        Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
+        if (sub.isPresent()) {
+            card.append("\n🗓 ").append(formatDaysLeft(subscriptionService.getDaysLeft(sub.get())))
+                    .append(" · до ").append(sub.get().getEndDate().toLocalDate().format(DATE_ONLY));
+        } else {
+            card.append("\n⌛ срок истёк / нет подписки");
+        }
+        card.append("</blockquote>");
+        String link = null;
+        try {
+            link = vpnKeyService.currentSubscriptionLink(key);
+        } catch (Exception e) {
+            log.warn("Не удалось собрать ссылку для ключа {}: {}", key.getId(), e.getMessage());
+        }
+        if (link != null) {
+            card.append("\n<code>").append(BotTextUtils.escapeHtml(link)).append("</code>\n");
+        }
+        return card.toString();
     }
 
     private static final java.time.format.DateTimeFormatter DATE_ONLY =

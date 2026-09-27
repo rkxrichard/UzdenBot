@@ -183,4 +183,63 @@ class AdminFlowServiceTest {
         verify(vpnKeyService).renewAdminKey(42L, 30);
         verify(adminStateService).clear(500L);
     }
+
+    private static VpnKey adminKey(long id, String name) {
+        VpnKey k = new VpnKey();
+        k.setId(id);
+        k.setName(name);
+        k.setCreatedByAdmin(true);
+        k.setStatus(VpnKey.Status.ACTIVE);
+        return k;
+    }
+
+    private static Message text(String t) {
+        Message m = new Message();
+        m.setText(t);
+        return m;
+    }
+
+    @Test
+    void replaceAdminKeyByNameRotatesAndShowsNewLink() {
+        AdminStateService state = mock(AdminStateService.class);
+        SubscriptionService subs = mock(SubscriptionService.class);
+        VpnKeyService keys = mock(VpnKeyService.class);
+        AdminFlowService service = new AdminFlowService(state, subs, mock(UserService.class), keys, mock(ReferralService.class));
+
+        VpnKey mama = adminKey(3375, "Мама");
+        VpnKey other = adminKey(3267, "Мама Малики");
+        when(keys.listAdminCreatedKeys()).thenReturn(List.of(mama, other));
+        when(keys.rotateAdminKey(3375)).thenReturn(mama);
+        when(keys.currentSubscriptionLink(mama)).thenReturn("https://78.17.176.74:2096/sub/snew");
+
+        List<BotApiMethod<?>> out = service.handleAdminMessage(1L, text("мама"), AdminAction.REPLACE_ADMIN_KEY);
+
+        verify(keys).rotateAdminKey(3375);          // точное совпадение важнее «содержит»
+        verify(keys, never()).rotateAdminKey(3267);
+        String reply = ((SendMessage) out.get(0)).getText();
+        assertTrue(reply.contains("Ключ заменён"));
+        assertTrue(reply.contains("<code>https://78.17.176.74:2096/sub/snew</code>"));
+        verify(state).clear(1L);
+    }
+
+    @Test
+    void replaceAdminKeyAmbiguousNameAsksForId() {
+        AdminStateService state = mock(AdminStateService.class);
+        VpnKeyService keys = mock(VpnKeyService.class);
+        AdminFlowService service = new AdminFlowService(state, mock(SubscriptionService.class), mock(UserService.class), keys, mock(ReferralService.class));
+        when(keys.listAdminCreatedKeys()).thenReturn(List.of(adminKey(2897, "Умар Магомед"), adminKey(2896, "Али-Магомед")));
+
+        List<BotApiMethod<?>> out = service.handleAdminMessage(1L, text("магомед"), AdminAction.REPLACE_ADMIN_KEY);
+
+        verify(keys, never()).rotateAdminKey(anyLong());
+        String reply = ((SendMessage) out.get(0)).getText();
+        assertTrue(reply.contains("2897") && reply.contains("2896"));
+    }
+
+    @Test
+    void rotatedEmailKeepsPrefixAndSwapsUuidSuffix() {
+        java.util.UUID u = java.util.UUID.fromString("abcdef12-0000-0000-0000-000000000000");
+        assertEquals("tg_ivan_123_abcdef12", VpnKeyService.rotatedEmail("tg_ivan_123_0a1b2c3d", u));
+        assertEquals("custom_abcdef12", VpnKeyService.rotatedEmail("custom", u));
+    }
 }
