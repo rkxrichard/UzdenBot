@@ -1,0 +1,495 @@
+From 7606e10d275eb9001af1ee1b87b012fc2f492a35 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 27 Sep 2026 09:05:45 +0300
+Subject: [PATCH 2/2] =?UTF-8?q?=D0=90=D0=B4=D0=BC=D0=B8=D0=BD=D0=BA=D0=B0:?=
+ =?UTF-8?q?=20=D0=B7=D0=B0=D0=BC=D0=B5=D0=BD=D0=B0=20=D1=81=D0=BE=D0=B7?=
+ =?UTF-8?q?=D0=B4=D0=B0=D0=BD=D0=BD=D1=8B=D1=85=20=D0=BA=D0=BB=D1=8E=D1=87?=
+ =?UTF-8?q?=D0=B5=D0=B9=20=E2=80=94=20=D0=BF=D0=BE=20=D0=BD=D0=B0=D0=B7?=
+ =?UTF-8?q?=D0=B2=D0=B0=D0=BD=D0=B8=D1=8E/ID=20=D0=B8=20=D0=B2=D1=81=D0=B5?=
+ =?UTF-8?q?=20=D1=80=D0=B0=D0=B7=D0=BE=D0=BC?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Ключ заменяется «на месте»: ID, имя и срок остаются, выдаётся новый UUID и ссылка.
+Старые клиенты в 3x-ui отключаются только после успешного выпуска новых, при ошибке —
+откат к старым значениям. «Заменить все» идёт в фоне и в конце присылает свежий список.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NBNj7Wm5czZCid4MSun4Vh
+---
+ .../uzden/uzdenbot/services/AdminAction.java  |   3 +-
+ .../uzdenbot/services/AdminFlowService.java   | 205 +++++++++++++++---
+ .../uzdenbot/services/BotMenuService.java     |   9 +
+ .../uzdenbot/services/BotUpdateHandler.java   |  20 ++
+ .../uzdenbot/services/VpnKeyService.java      |  75 +++++++
+ .../services/AdminFlowServiceTest.java        |  59 +++++
+ 6 files changed, 345 insertions(+), 26 deletions(-)
+
+diff --git a/src/main/java/ru/uzden/uzdenbot/services/AdminAction.java b/src/main/java/ru/uzden/uzdenbot/services/AdminAction.java
+index 6615f47..1f62f44 100644
+--- a/src/main/java/ru/uzden/uzdenbot/services/AdminAction.java
++++ b/src/main/java/ru/uzden/uzdenbot/services/AdminAction.java
+@@ -13,5 +13,6 @@ public enum AdminAction {
+     RESET_REFERRAL_LINK_COUNTER,
+     DELETE_REFERRAL_LINK,
+     CREATE_ADMIN_KEY,
+-    RENEW_ADMIN_KEY
++    RENEW_ADMIN_KEY,
++    REPLACE_ADMIN_KEY
+ }
+diff --git a/src/main/java/ru/uzden/uzdenbot/services/AdminFlowService.java b/src/main/java/ru/uzden/uzdenbot/services/AdminFlowService.java
+index 7da45d9..b858913 100644
+--- a/src/main/java/ru/uzden/uzdenbot/services/AdminFlowService.java
++++ b/src/main/java/ru/uzden/uzdenbot/services/AdminFlowService.java
+@@ -32,6 +32,12 @@ public class AdminFlowService {
+     @Value("${telegram.bot.username:}")
+     private String botUsername;
+ 
++    /** MainBot берём лениво: он сам зависит (через BotUpdateHandler) от этого сервиса. */
++    @org.springframework.beans.factory.annotation.Autowired(required = false)
++    private org.springframework.beans.factory.ObjectProvider<ru.uzden.uzdenbot.bots.MainBot> mainBotProvider;
++
++    private final java.util.concurrent.atomic.AtomicBoolean rotateAllRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
++
+     public List<BotApiMethod<?>> handleAdminMessage(Long chatId, Message message, AdminAction action) {
+         List<BotApiMethod<?>> out = new ArrayList<>();
+         String text = message == null ? null : message.getText();
+@@ -50,6 +56,7 @@ public class AdminFlowService {
+             case DELETE_REFERRAL_LINK -> handleDeleteReferralLink(chatId, trimmed, out);
+             case CREATE_ADMIN_KEY -> handleCreateAdminKey(chatId, trimmed, out);
+             case RENEW_ADMIN_KEY -> handleRenewAdminKey(chatId, trimmed, out);
++            case REPLACE_ADMIN_KEY -> handleReplaceAdminKey(chatId, trimmed, out);
+             default -> {
+             }
+         }
+@@ -408,30 +415,7 @@ public class AdminFlowService {
+         StringBuilder sb = new StringBuilder("📃 <b>Созданные ключи</b> · " + keys.size() + "\n"
+                 + "<i>Нажмите на ссылку — она скопируется.</i>\n");
+         for (VpnKey key : keys) {
+-            StringBuilder card = new StringBuilder();
+-            card.append("\n<blockquote><b>🆔 ").append(key.getId()).append("</b>");
+-            if (key.getName() != null && !key.getName().isBlank()) {
+-                card.append(" · <b>").append(BotTextUtils.escapeHtml(key.getName())).append("</b>");
+-            }
+-            card.append("\n").append(adminKeyStatus(key));
+-            Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
+-            if (sub.isPresent()) {
+-                long daysLeft = subscriptionService.getDaysLeft(sub.get());
+-                card.append("\n🗓 ").append(formatDaysLeft(daysLeft))
+-                        .append(" · до ").append(sub.get().getEndDate().toLocalDate().format(DATE_ONLY));
+-            } else {
+-                card.append("\n⌛ срок истёк / нет подписки");
+-            }
+-            String link = null;
+-            try {
+-                link = vpnKeyService.currentSubscriptionLink(key);
+-            } catch (Exception e) {
+-                log.warn("Не удалось собрать ссылку для ключа {}: {}", key.getId(), e.getMessage());
+-            }
+-            card.append("</blockquote>");
+-            if (link != null) {
+-                card.append("\n<code>").append(BotTextUtils.escapeHtml(link)).append("</code>\n");
+-            }
++            String card = "\n" + adminKeyCard(key);
+             if (sb.length() + card.length() > limit) {
+                 out.add(htmlMessage(chatId, sb.toString()));
+                 sb = new StringBuilder();
+@@ -440,10 +424,181 @@ public class AdminFlowService {
+         }
+         sb.append("\n<i>Продлить: «🔁 Продлить ключ» → </i><code>")
+                 .append(keys.get(0).getId()).append(" 30</code> <i>(ID и дни)</i>");
+-        out.add(htmlMessage(chatId, sb.toString()));
++        SendMessage last = htmlMessage(chatId, sb.toString());
++        last.setReplyMarkup(adminKeysKeyboard());
++        out.add(last);
+         return out;
+     }
+ 
++    public static org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup adminKeysKeyboard() {
++        var one = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
++                .text("♻️ Заменить ключ").callbackData("ADMIN_REPLACE_KEY").build();
++        var all = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
++                .text("♻️ Заменить все").callbackData("ADMIN_REPLACE_ALL_KEYS").build();
++        var refresh = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
++                .text("🔄 Обновить список").callbackData("ADMIN_LIST_KEYS").build();
++        return org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup.builder()
++                .keyboard(List.of(List.of(one, all), List.of(refresh)))
++                .build();
++    }
++
++    /* ======================= замена админ-ключей ======================= */
++
++    public SendMessage replaceAdminKeyPrompt(Long chatId) {
++        adminStateService.set(chatId, AdminAction.REPLACE_ADMIN_KEY);
++        return htmlMessage(chatId,
++                "♻️ <b>Замена ключа</b>\n\n" +
++                "Отправьте <b>название</b> ключа (как в списке) или его <b>ID</b>.\n" +
++                "Ключ получит новую ссылку, старая перестанет работать. Срок и ID сохранятся.\n\n" +
++                "<i>Отмена — /cancel</i>");
++    }
++
++    private void handleReplaceAdminKey(Long chatId, String text, List<BotApiMethod<?>> out) {
++        if (text == null || text.isBlank()) {
++            out.add(htmlMessage(chatId, "Отправьте название или ID ключа. <i>Отмена — /cancel</i>"));
++            return;
++        }
++        List<VpnKey> candidates = findAdminKeysByNameOrId(text.trim());
++        if (candidates.isEmpty()) {
++            out.add(htmlMessage(chatId, "❌ Ключ «" + BotTextUtils.escapeHtml(text.trim()) + "» не найден среди созданных.\n" +
++                    "Проверьте название в «📃 Созданные ключи» или отправьте ID. <i>Отмена — /cancel</i>"));
++            return;
++        }
++        if (candidates.size() > 1) {
++            StringBuilder sb = new StringBuilder("Нашлось несколько ключей — отправьте <b>ID</b> нужного:\n");
++            for (VpnKey k : candidates) {
++                sb.append("\n<code>").append(k.getId()).append("</code> · ")
++                        .append(BotTextUtils.escapeHtml(k.getName() == null ? "" : k.getName()));
++            }
++            out.add(htmlMessage(chatId, sb.toString()));
++            return;
++        }
++        VpnKey target = candidates.get(0);
++        try {
++            VpnKey fresh = vpnKeyService.rotateAdminKey(target.getId());
++            adminStateService.clear(chatId);
++            out.add(htmlMessage(chatId, "✅ <b>Ключ заменён</b>\n\n" + adminKeyCard(fresh) +
++                    "\n<i>Старая ссылка больше не работает — отправьте человеку новую.</i>"));
++        } catch (Exception e) {
++            log.warn("Не удалось заменить админ-ключ {}: {}", target.getId(), e.getMessage());
++            out.add(htmlMessage(chatId, "❌ Не удалось заменить ключ: " + BotTextUtils.escapeHtml(String.valueOf(e.getMessage())) +
++                    "\nСтарая ссылка продолжает работать."));
++        }
++    }
++
++    private List<VpnKey> findAdminKeysByNameOrId(String query) {
++        List<VpnKey> all = vpnKeyService.listAdminCreatedKeys();
++        Long id = parseLong(query);
++        if (id != null) {
++            List<VpnKey> byId = all.stream().filter(k -> id.equals(k.getId())).toList();
++            if (!byId.isEmpty()) return byId;
++        }
++        String q = query.toLowerCase(java.util.Locale.ROOT);
++        List<VpnKey> exact = all.stream()
++                .filter(k -> k.getName() != null && k.getName().trim().toLowerCase(java.util.Locale.ROOT).equals(q))
++                .toList();
++        if (!exact.isEmpty()) return exact;
++        return all.stream()
++                .filter(k -> k.getName() != null && k.getName().toLowerCase(java.util.Locale.ROOT).contains(q))
++                .toList();
++    }
++
++    public SendMessage replaceAllConfirm(Long chatId) {
++        int n = vpnKeyService.listRotatableAdminKeys().size();
++        var yes = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
++                .text("✅ Да, заменить все").callbackData("ADMIN_REPLACE_ALL_CONFIRM").build();
++        var no = org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton.builder()
++                .text("✖️ Отмена").callbackData("ADMIN_REPLACE_ALL_CANCEL").build();
++        SendMessage sm = htmlMessage(chatId,
++                "♻️ <b>Заменить все созданные ключи?</b>\n\n" +
++                "Активных ключей: <b>" + n + "</b>. Каждый получит новую ссылку, старые перестанут работать.\n" +
++                "ID, названия и сроки сохранятся. Отозванные ключи не трогаю.\n\n" +
++                "<i>После замены пришлю новый список со ссылками.</i>");
++        sm.setReplyMarkup(org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup.builder()
++                .keyboard(List.of(List.of(yes, no))).build());
++        return sm;
++    }
++
++    /**
++     * Запускает замену всех ключей в фоне (это десятки запросов к панели — не блокируем бота),
++     * по окончании присылает итог и свежий список со ссылками.
++     */
++    public SendMessage startReplaceAll(Long chatId) {
++        if (!rotateAllRunning.compareAndSet(false, true)) {
++            return htmlMessage(chatId, "⏳ Замена уже идёт — дождитесь итога.");
++        }
++        List<VpnKey> keys = vpnKeyService.listRotatableAdminKeys();
++        Thread worker = new Thread(() -> {
++            int ok = 0;
++            List<String> failed = new ArrayList<>();
++            try {
++                for (VpnKey k : keys) {
++                    try {
++                        vpnKeyService.rotateAdminKey(k.getId());
++                        ok++;
++                    } catch (Exception e) {
++                        log.warn("Замена всех: ключ {} не заменён: {}", k.getId(), e.getMessage());
++                        failed.add(k.getId() + (k.getName() != null ? " · " + k.getName() : ""));
++                    }
++                }
++                StringBuilder sb = new StringBuilder("✅ <b>Замена завершена</b>\nЗаменено: <b>")
++                        .append(ok).append("</b> из ").append(keys.size());
++                if (!failed.isEmpty()) {
++                    sb.append("\n\n⚠️ Не удалось (старые ссылки у них работают):");
++                    failed.forEach(f -> sb.append("\n• ").append(BotTextUtils.escapeHtml(f)));
++                }
++                send(htmlMessage(chatId, sb.toString()));
++                for (SendMessage m : buildAdminKeysMessages(chatId)) {
++                    send(m);
++                }
++            } catch (Exception e) {
++                log.error("Замена всех админ-ключей упала", e);
++                send(htmlMessage(chatId, "❌ Замена прервана: " + BotTextUtils.escapeHtml(String.valueOf(e.getMessage()))));
++            } finally {
++                rotateAllRunning.set(false);
++            }
++        }, "admin-rotate-all");
++        worker.setDaemon(true);
++        worker.start();
++        return htmlMessage(chatId, "⏳ Заменяю <b>" + keys.size() + "</b> ключей… Это займёт пару минут, пришлю итог и новый список.");
++    }
++
++    private void send(SendMessage m) {
++        try {
++            if (mainBotProvider != null) {
++                mainBotProvider.getObject().execute(m);
++            }
++        } catch (Exception e) {
++            log.warn("Не удалось отправить сообщение админу: {}", e.getMessage());
++        }
++    }
++
++    private String adminKeyCard(VpnKey key) {
++        StringBuilder card = new StringBuilder("<blockquote><b>🆔 ").append(key.getId()).append("</b>");
++        if (key.getName() != null && !key.getName().isBlank()) {
++            card.append(" · <b>").append(BotTextUtils.escapeHtml(key.getName())).append("</b>");
++        }
++        card.append("\n").append(adminKeyStatus(key));
++        Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
++        if (sub.isPresent()) {
++            card.append("\n🗓 ").append(formatDaysLeft(subscriptionService.getDaysLeft(sub.get())))
++                    .append(" · до ").append(sub.get().getEndDate().toLocalDate().format(DATE_ONLY));
++        } else {
++            card.append("\n⌛ срок истёк / нет подписки");
++        }
++        card.append("</blockquote>");
++        String link = null;
++        try {
++            link = vpnKeyService.currentSubscriptionLink(key);
++        } catch (Exception e) {
++            log.warn("Не удалось собрать ссылку для ключа {}: {}", key.getId(), e.getMessage());
++        }
++        if (link != null) {
++            card.append("\n<code>").append(BotTextUtils.escapeHtml(link)).append("</code>\n");
++        }
++        return card.toString();
++    }
++
+     private static final java.time.format.DateTimeFormatter DATE_ONLY =
+             java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy");
+ 
+diff --git a/src/main/java/ru/uzden/uzdenbot/services/BotMenuService.java b/src/main/java/ru/uzden/uzdenbot/services/BotMenuService.java
+index e9f8426..c587561 100644
+--- a/src/main/java/ru/uzden/uzdenbot/services/BotMenuService.java
++++ b/src/main/java/ru/uzden/uzdenbot/services/BotMenuService.java
+@@ -139,6 +139,14 @@ public class BotMenuService {
+                 .text("📃 Созданные ключи")
+                 .callbackData("ADMIN_LIST_KEYS")
+                 .build();
++        InlineKeyboardButton bReplaceAdminKey = InlineKeyboardButton.builder()
++                .text("♻️ Заменить ключ")
++                .callbackData("ADMIN_REPLACE_KEY")
++                .build();
++        InlineKeyboardButton bReplaceAllAdminKeys = InlineKeyboardButton.builder()
++                .text("♻️ Заменить все ключи")
++                .callbackData("ADMIN_REPLACE_ALL_KEYS")
++                .build();
+         InlineKeyboardButton bCreateReferralLink = InlineKeyboardButton.builder()
+                 .text("🔗 Создать реф. ссылку")
+                 .callbackData("ADMIN_CREATE_REF_LINK")
+@@ -186,6 +194,7 @@ public class BotMenuService {
+                         List.of(bCreateAdminKey),
+                         List.of(bRenewAdminKey),
+                         List.of(bListAdminKeys),
++                        List.of(bReplaceAdminKey, bReplaceAllAdminKeys),
+                         List.of(bCreateReferralLink),
+                         List.of(bReferralStats),
+                         List.of(bResetReferralCounter),
+diff --git a/src/main/java/ru/uzden/uzdenbot/services/BotUpdateHandler.java b/src/main/java/ru/uzden/uzdenbot/services/BotUpdateHandler.java
+index 0af6013..927c90d 100644
+--- a/src/main/java/ru/uzden/uzdenbot/services/BotUpdateHandler.java
++++ b/src/main/java/ru/uzden/uzdenbot/services/BotUpdateHandler.java
+@@ -291,6 +291,26 @@ public class BotUpdateHandler {
+                     out.addAll(adminFlowService.buildAdminKeysMessages(chatId));
+                 }
+             }
++            case "ADMIN_REPLACE_KEY" -> {
++                if (isAdmin) {
++                    out.add(adminFlowService.replaceAdminKeyPrompt(chatId));
++                }
++            }
++            case "ADMIN_REPLACE_ALL_KEYS" -> {
++                if (isAdmin) {
++                    out.add(adminFlowService.replaceAllConfirm(chatId));
++                }
++            }
++            case "ADMIN_REPLACE_ALL_CONFIRM" -> {
++                if (isAdmin) {
++                    out.add(adminFlowService.startReplaceAll(chatId));
++                }
++            }
++            case "ADMIN_REPLACE_ALL_CANCEL" -> {
++                if (isAdmin) {
++                    out.add(BotMessageFactory.simpleMessage(chatId, "Отменено."));
++                }
++            }
+             case "ADMIN_CREATE_REF_LINK" -> {
+                 if (isAdmin) {
+                     adminStateService.set(chatId, AdminAction.CREATE_REFERRAL_LINK);
+diff --git a/src/main/java/ru/uzden/uzdenbot/services/VpnKeyService.java b/src/main/java/ru/uzden/uzdenbot/services/VpnKeyService.java
+index f5dbdfc..35ea0f9 100644
+--- a/src/main/java/ru/uzden/uzdenbot/services/VpnKeyService.java
++++ b/src/main/java/ru/uzden/uzdenbot/services/VpnKeyService.java
+@@ -260,6 +260,81 @@ public class VpnKeyService {
+         return link;
+     }
+ 
++    /**
++     * Замена (ротация) админ-ключа «на месте»: ID, имя и срок сохраняются, но выдаётся новый UUID
++     * и новая ссылка подписки. Старые клиенты в 3x-ui отключаются только после успешного выпуска новых;
++     * если выпуск упал — ключ откатывается к старым значениям и продолжает работать.
++     */
++    public VpnKey rotateAdminKey(long keyId) {
++        RotateContext ctx = tx.execute(status -> rotateAdminKeyTx(keyId));
++        VpnKey fresh;
++        try {
++            fresh = finalizeIssueOutsideTx(keyId);
++        } catch (RuntimeException e) {
++            tx.execute(status -> restoreAfterFailedRotateTx(ctx));
++            throw e;
++        }
++        try {
++            disableClientEverywhere(ctx.backend, ctx.inboundId, ctx.oldClientUuid);
++        } catch (Exception e) {
++            log.warn("Ключ {} заменён, но старые клиенты не отключились: {}", keyId, safeMsg(e));
++        }
++        return fresh;
++    }
++
++    /** Админ-ключи, которые можно заменить (не отозванные, активные). */
++    public List<VpnKey> listRotatableAdminKeys() {
++        return listAdminCreatedKeys().stream()
++                .filter(k -> !k.isRevoked() && k.getStatus() == VpnKey.Status.ACTIVE)
++                .toList();
++    }
++
++    private RotateContext rotateAdminKeyTx(long keyId) {
++        VpnKey key = vpnKeyRepository.findById(keyId)
++                .orElseThrow(() -> new IllegalStateException("Ключ " + keyId + " не найден"));
++        if (!key.isCreatedByAdmin()) {
++            throw new IllegalStateException("Ключ " + keyId + " не является созданным через админку");
++        }
++        if (key.isRevoked() || key.getStatus() == VpnKey.Status.REVOKED) {
++            throw new IllegalStateException("Ключ " + keyId + " отозван — сначала продлите его");
++        }
++        userRepository.lockUser(key.getUser().getId());
++
++        RotateContext ctx = new RotateContext(key.getId(), key.getBackend(), key.getInboundId(),
++                key.getClientUuid(), key.getClientEmail(), key.getKeyValue());
++
++        UUID newUuid = UUID.randomUUID();
++        key.setClientUuid(newUuid);
++        key.setClientEmail(rotatedEmail(key.getClientEmail(), newUuid));
++        key.setKeyValue("PENDING:" + newUuid);
++        key.setStatus(VpnKey.Status.PENDING);
++        key.setLastError(null);
++        vpnKeyRepository.save(key);
++        return ctx;
++    }
++
++    private Void restoreAfterFailedRotateTx(RotateContext ctx) {
++        vpnKeyRepository.findById(ctx.keyId).ifPresent(key -> {
++            key.setClientUuid(ctx.oldClientUuid);
++            key.setClientEmail(ctx.oldClientEmail);
++            key.markActive(ctx.oldKeyValue);
++            vpnKeyRepository.save(key);
++        });
++        return null;
++    }
++
++    static String rotatedEmail(String oldEmail, UUID newUuid) {
++        String shortUuid = newUuid.toString().substring(0, 8);
++        if (oldEmail == null || oldEmail.isBlank()) return "admin_" + shortUuid;
++        if (oldEmail.matches(".*_[0-9a-f]{8}$")) {
++            return oldEmail.substring(0, oldEmail.length() - 8) + shortUuid;
++        }
++        return oldEmail + "_" + shortUuid;
++    }
++
++    private record RotateContext(long keyId, VpnKey.Backend backend, Long inboundId,
++                                 UUID oldClientUuid, String oldClientEmail, String oldKeyValue) {}
++
+     public List<VpnKey> listAdminCreatedKeys() {
+         return vpnKeyRepository.findByCreatedByAdminTrueOrderByCreatedAtDesc();
+     }
+diff --git a/src/test/java/ru/uzden/uzdenbot/services/AdminFlowServiceTest.java b/src/test/java/ru/uzden/uzdenbot/services/AdminFlowServiceTest.java
+index 83e211e..5a76f52 100644
+--- a/src/test/java/ru/uzden/uzdenbot/services/AdminFlowServiceTest.java
++++ b/src/test/java/ru/uzden/uzdenbot/services/AdminFlowServiceTest.java
+@@ -183,4 +183,63 @@ class AdminFlowServiceTest {
+         verify(vpnKeyService).renewAdminKey(42L, 30);
+         verify(adminStateService).clear(500L);
+     }
++
++    private static VpnKey adminKey(long id, String name) {
++        VpnKey k = new VpnKey();
++        k.setId(id);
++        k.setName(name);
++        k.setCreatedByAdmin(true);
++        k.setStatus(VpnKey.Status.ACTIVE);
++        return k;
++    }
++
++    private static Message text(String t) {
++        Message m = new Message();
++        m.setText(t);
++        return m;
++    }
++
++    @Test
++    void replaceAdminKeyByNameRotatesAndShowsNewLink() {
++        AdminStateService state = mock(AdminStateService.class);
++        SubscriptionService subs = mock(SubscriptionService.class);
++        VpnKeyService keys = mock(VpnKeyService.class);
++        AdminFlowService service = new AdminFlowService(state, subs, mock(UserService.class), keys, mock(ReferralService.class));
++
++        VpnKey mama = adminKey(3375, "Мама");
++        VpnKey other = adminKey(3267, "Мама Малики");
++        when(keys.listAdminCreatedKeys()).thenReturn(List.of(mama, other));
++        when(keys.rotateAdminKey(3375)).thenReturn(mama);
++        when(keys.currentSubscriptionLink(mama)).thenReturn("https://78.17.176.74:2096/sub/snew");
++
++        List<BotApiMethod<?>> out = service.handleAdminMessage(1L, text("мама"), AdminAction.REPLACE_ADMIN_KEY);
++
++        verify(keys).rotateAdminKey(3375);          // точное совпадение важнее «содержит»
++        verify(keys, never()).rotateAdminKey(3267);
++        String reply = ((SendMessage) out.get(0)).getText();
++        assertTrue(reply.contains("Ключ заменён"));
++        assertTrue(reply.contains("<code>https://78.17.176.74:2096/sub/snew</code>"));
++        verify(state).clear(1L);
++    }
++
++    @Test
++    void replaceAdminKeyAmbiguousNameAsksForId() {
++        AdminStateService state = mock(AdminStateService.class);
++        VpnKeyService keys = mock(VpnKeyService.class);
++        AdminFlowService service = new AdminFlowService(state, mock(SubscriptionService.class), mock(UserService.class), keys, mock(ReferralService.class));
++        when(keys.listAdminCreatedKeys()).thenReturn(List.of(adminKey(2897, "Умар Магомед"), adminKey(2896, "Али-Магомед")));
++
++        List<BotApiMethod<?>> out = service.handleAdminMessage(1L, text("магомед"), AdminAction.REPLACE_ADMIN_KEY);
++
++        verify(keys, never()).rotateAdminKey(anyLong());
++        String reply = ((SendMessage) out.get(0)).getText();
++        assertTrue(reply.contains("2897") && reply.contains("2896"));
++    }
++
++    @Test
++    void rotatedEmailKeepsPrefixAndSwapsUuidSuffix() {
++        java.util.UUID u = java.util.UUID.fromString("abcdef12-0000-0000-0000-000000000000");
++        assertEquals("tg_ivan_123_abcdef12", VpnKeyService.rotatedEmail("tg_ivan_123_0a1b2c3d", u));
++        assertEquals("custom_abcdef12", VpnKeyService.rotatedEmail("custom", u));
++    }
+ }
+-- 
+2.43.0
+
