@@ -427,7 +427,64 @@ public class AdminFlowService {
         SendMessage last = htmlMessage(chatId, sb.toString());
         last.setReplyMarkup(adminKeysKeyboard());
         out.add(last);
+
+        appendManualPanelClients(chatId, out);
         return out;
+    }
+
+    /**
+     * Клиенты, добавленные вручную прямо в панели 3x-ui (не через бота) — у них нет строки
+     * в БД, поэтому в основной список они не попадают. Показываем отдельным блоком, той же
+     * ссылкой для копирования, чтобы их было видно и можно было проверить/отозвать в панели.
+     */
+    private void appendManualPanelClients(Long chatId, List<SendMessage> out) {
+        List<VpnKeyService.ManualPanelClient> manual;
+        try {
+            manual = vpnKeyService.listUnlinkedPanelClients();
+        } catch (Exception e) {
+            log.warn("Не удалось получить список ручных клиентов панели: {}", e.getMessage());
+            return;
+        }
+        if (manual.isEmpty()) {
+            return;
+        }
+        final int limit = 3500;
+        List<SendMessage> extra = new ArrayList<>();
+        StringBuilder sb = new StringBuilder("🧩 <b>Ключи, созданные вручную в панели</b> · " + manual.size() + "\n"
+                + "<i>Не привязаны к боту/пользователям — только из 3x-ui.</i>\n");
+        for (VpnKeyService.ManualPanelClient c : manual) {
+            String card = "\n" + manualClientCard(c);
+            if (sb.length() + card.length() > limit) {
+                extra.add(htmlMessage(chatId, sb.toString()));
+                sb = new StringBuilder();
+            }
+            sb.append(card);
+        }
+        extra.add(htmlMessage(chatId, sb.toString()));
+        out.addAll(extra);
+    }
+
+    private String manualClientCard(VpnKeyService.ManualPanelClient c) {
+        StringBuilder card = new StringBuilder("<blockquote>");
+        String email = (c.email() == null || c.email().isBlank()) ? "—" : c.email();
+        card.append("👤 <b>").append(BotTextUtils.escapeHtml(email)).append("</b>");
+        card.append("\n").append(c.enable() ? "🟢 включён" : "🔴 выключен");
+        if (c.backend() == VpnKey.Backend.RU_EU) {
+            card.append(" · RU+EU");
+        }
+        card.append("</blockquote>");
+        String link = null;
+        try {
+            link = vpnKeyService.manualPanelClientLink(c);
+        } catch (Exception e) {
+            log.warn("Не удалось собрать ссылку для ручного клиента {}: {}", c.email(), e.getMessage());
+        }
+        if (link != null) {
+            card.append("\n<code>").append(BotTextUtils.escapeHtml(link)).append("</code>\n");
+        } else {
+            card.append("\n<i>без subId — подписочная ссылка недоступна, проверяйте в панели</i>\n");
+        }
+        return card.toString();
     }
 
     public static org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup adminKeysKeyboard() {

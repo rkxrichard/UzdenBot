@@ -21,8 +21,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -337,6 +341,70 @@ public class VpnKeyService {
 
     public List<VpnKey> listAdminCreatedKeys() {
         return vpnKeyRepository.findByCreatedByAdminTrueOrderByCreatedAtDesc();
+    }
+
+    /**
+     * Клиент, реально существующий в панели 3x-ui на одном из подписочных inbound'ов,
+     * но не соответствующий ни одному ключу в БД бота — то есть добавленный вручную
+     * через веб-интерфейс панели, а не выпущенный ботом.
+     */
+    public record ManualPanelClient(String email, String subId, boolean enable, VpnKey.Backend backend) {}
+
+    /**
+     * Ищет клиентов, созданных вручную в панели (не через бота). Сверяет реальных клиентов
+     * каждого подписочного inbound'а с детерминированно выведенными uuid всех ключей из БД —
+     * всё, что не совпало, считается "ручным" клиентом.
+     */
+    public List<ManualPanelClient> listUnlinkedPanelClients() {
+        List<ManualPanelClient> result = new ArrayList<>();
+        result.addAll(collectUnlinkedForBackend(defaultBackend));
+        if (ruEuBackend != null) {
+            result.addAll(collectUnlinkedForBackend(ruEuBackend));
+        }
+        return result;
+    }
+
+    public String manualPanelClientLink(ManualPanelClient client) {
+        if (client == null || client.subId() == null || client.subId().isBlank()) {
+            return null;
+        }
+        return subscriptionProxyService.buildSubscriptionUrl(client.backend(), client.subId());
+    }
+
+    private List<ManualPanelClient> collectUnlinkedForBackend(BackendRuntime backend) {
+        if (backend == null || backend.subscriptionInbounds().isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Set<String>> knownIdentitiesByInbound = new HashMap<>();
+        for (VpnKey key : vpnKeyRepository.findAll()) {
+            if (key.getBackend() != backend.backend() || key.getClientUuid() == null) continue;
+            for (Long inboundId : clientInboundIds(backend, key.getInboundId())) {
+                Set<String> known = knownIdentitiesByInbound.computeIfAbsent(inboundId, id -> new HashSet<>());
+                known.add(panelClientUuid(key.getClientUuid(), inboundId).toString());
+                // легаси-клиенты (до введения per-inbound derivation) могли остаться под "голым" uuid
+                known.add(key.getClientUuid().toString());
+            }
+        }
+
+        Map<String, ManualPanelClient> bySubId = new LinkedHashMap<>();
+        for (Long inboundId : backend.subscriptionInbounds()) {
+            Set<String> known = knownIdentitiesByInbound.getOrDefault(inboundId, Set.of());
+            List<ThreeXuiClient.PanelClient> clients;
+            try {
+                clients = backend.client().listClients(inboundId);
+            } catch (Exception e) {
+                log.warn("Не удалось получить клиентов inbound {} для поиска ручных ключей: {}", inboundId, safeMsg(e));
+                continue;
+            }
+            for (ThreeXuiClient.PanelClient c : clients) {
+                if (c.identity() == null || known.contains(c.identity())) continue;
+                String dedupeKey = (c.subId() != null && !c.subId().isBlank())
+                        ? "sub:" + c.subId()
+                        : "email:" + c.email() + ":" + c.identity();
+                bySubId.putIfAbsent(dedupeKey, new ManualPanelClient(c.email(), c.subId(), c.enable(), backend.backend()));
+            }
+        }
+        return new ArrayList<>(bySubId.values());
     }
 
     private VpnKey createAdminPendingKeyTx(Long userId, String name) {

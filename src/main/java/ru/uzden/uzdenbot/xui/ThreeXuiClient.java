@@ -336,6 +336,51 @@ public class ThreeXuiClient {
         return OptionalLong.empty();
     }
 
+    /**
+     * Клиент из settings.clients конкретного inbound, как он реально лежит в панели —
+     * включая тех, что были добавлены вручную через веб-интерфейс 3x-ui, а не через бота.
+     * identity — это "id" (vless/vmess) или "password" (trojan), в зависимости от протокола.
+     */
+    public record PanelClient(String identity, String email, String subId, boolean enable) {}
+
+    /**
+     * Возвращает всех клиентов inbound "как есть" из settings.clients — в т.ч. клиентов,
+     * добавленных вручную в панели. Не бросает исключение при ошибке разбора — просто
+     * возвращает пустой список, чтобы одна сломанная запись не роняла весь листинг.
+     */
+    public List<PanelClient> listClients(long inboundId) {
+        String inbound;
+        try {
+            inbound = getInbound(inboundId);
+        } catch (Exception e) {
+            log.warn("Не удалось получить inbound {} для листинга клиентов: {}", inboundId, e.getMessage());
+            return List.of();
+        }
+        if (inbound == null || inbound.isBlank()) return List.of();
+        String settingsJson = JsonMini.unquoteIfString(JsonMini.extractFieldValue(inbound, "settings"));
+        if (settingsJson == null || settingsJson.isBlank()) return List.of();
+        List<PanelClient> out = new ArrayList<>();
+        try {
+            JsonNode root = objectMapper.readTree(settingsJson);
+            JsonNode clients = root.path("clients");
+            if (clients.isArray()) {
+                for (JsonNode c : clients) {
+                    String id = c.path("id").asText(null);
+                    String password = c.path("password").asText(null);
+                    String identity = (id != null && !id.isBlank()) ? id : password;
+                    if (identity == null || identity.isBlank()) continue;
+                    String email = c.path("email").asText(null);
+                    String subId = c.path("subId").asText(null);
+                    boolean enable = c.path("enable").asBoolean(true);
+                    out.add(new PanelClient(identity, email, subId, enable));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Не удалось разобрать клиентов inbound {}: {}", inboundId, e.getMessage());
+        }
+        return out;
+    }
+
     /* ============================ helpers ============================ */
 
     /**
