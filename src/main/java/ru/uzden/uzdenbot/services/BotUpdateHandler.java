@@ -288,7 +288,7 @@ public class BotUpdateHandler {
             }
             case "ADMIN_LIST_KEYS" -> {
                 if (isAdmin) {
-                    out.add(adminFlowService.buildAdminKeysMessage(chatId));
+                    out.addAll(adminFlowService.buildAdminKeysMessages(chatId));
                 }
             }
             case "ADMIN_CREATE_REF_LINK" -> {

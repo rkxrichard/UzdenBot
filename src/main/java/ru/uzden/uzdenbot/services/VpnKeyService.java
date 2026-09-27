@@ -242,6 +242,24 @@ public class VpnKeyService {
         return finalizeIssueOutsideTx(keyId);
     }
 
+    /**
+     * Актуальная ссылка подписки для ACTIVE-ключа, собранная по текущему конфигу (адрес панели/прокси).
+     * Если в БД лежит устаревшая (например, со старым IP после переезда) — перезаписывает её.
+     * Клиента в 3x-ui не трогает: subId детерминирован от clientUuid и уже есть в панели.
+     * Для отозванных/неактивных ключей — null.
+     */
+    public String currentSubscriptionLink(VpnKey key) {
+        if (key == null || key.getClientUuid() == null) return null;
+        if (key.isRevoked() || key.getStatus() != VpnKey.Status.ACTIVE) return null;
+        BackendRuntime backend = backendConfig(key.getBackend());
+        String link = subscriptionProxyService.buildSubscriptionUrl(backend.backend(), subscriptionSubId(key.getClientUuid()));
+        if (!link.equals(key.getKeyValue())) {
+            tx.execute(status -> activateTx(key.getId(), link));
+            key.markActive(link);
+        }
+        return link;
+    }
+
     public List<VpnKey> listAdminCreatedKeys() {
         return vpnKeyRepository.findByCreatedByAdminTrueOrderByCreatedAtDesc();
     }

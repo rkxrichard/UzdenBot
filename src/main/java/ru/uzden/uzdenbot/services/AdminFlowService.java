@@ -394,34 +394,65 @@ public class AdminFlowService {
         }
     }
 
-    public SendMessage buildAdminKeysMessage(Long chatId) {
+    /**
+     * Список админ-ключей с актуальными ссылками (tap-to-copy через &lt;code&gt;).
+     * Бьётся на несколько сообщений, чтобы не упереться в лимит Telegram 4096 символов.
+     */
+    public List<SendMessage> buildAdminKeysMessages(Long chatId) {
         List<VpnKey> keys = vpnKeyService.listAdminCreatedKeys();
         if (keys.isEmpty()) {
-            return BotMessageFactory.simpleMessage(chatId, "Созданных админом ключей пока нет.");
+            return List.of(BotMessageFactory.simpleMessage(chatId, "Созданных админом ключей пока нет."));
         }
-        StringBuilder sb = new StringBuilder("📃 <b>Созданные ключи</b> · " + keys.size() + "\n");
+        final int limit = 3500;
+        List<SendMessage> out = new ArrayList<>();
+        StringBuilder sb = new StringBuilder("📃 <b>Созданные ключи</b> · " + keys.size() + "\n"
+                + "<i>Нажмите на ссылку — она скопируется.</i>\n");
         for (VpnKey key : keys) {
-            sb.append("\n<blockquote><b>🆔 ").append(key.getId()).append("</b>");
+            StringBuilder card = new StringBuilder();
+            card.append("\n<blockquote><b>🆔 ").append(key.getId()).append("</b>");
             if (key.getName() != null && !key.getName().isBlank()) {
-                sb.append(" · ").append(BotTextUtils.escapeHtml(key.getName()));
+                card.append(" · <b>").append(BotTextUtils.escapeHtml(key.getName())).append("</b>");
             }
-            sb.append("\n").append(adminKeyStatus(key));
+            card.append("\n").append(adminKeyStatus(key));
             Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
             if (sub.isPresent()) {
                 long daysLeft = subscriptionService.getDaysLeft(sub.get());
-                sb.append("\n🗓 ").append(formatDaysLeft(daysLeft))
-                        .append(" · до ").append(BotTextUtils.formatDate(sub.get().getEndDate()));
+                card.append("\n🗓 ").append(formatDaysLeft(daysLeft))
+                        .append(" · до ").append(sub.get().getEndDate().toLocalDate().format(DATE_ONLY));
             } else {
-                sb.append("\n⌛ срок истёк / нет подписки");
+                card.append("\n⌛ срок истёк / нет подписки");
             }
-            sb.append("</blockquote>");
+            String link = null;
+            try {
+                link = vpnKeyService.currentSubscriptionLink(key);
+            } catch (Exception e) {
+                log.warn("Не удалось собрать ссылку для ключа {}: {}", key.getId(), e.getMessage());
+            }
+            card.append("</blockquote>");
+            if (link != null) {
+                card.append("\n<code>").append(BotTextUtils.escapeHtml(link)).append("</code>\n");
+            }
+            if (sb.length() + card.length() > limit) {
+                out.add(htmlMessage(chatId, sb.toString()));
+                sb = new StringBuilder();
+            }
+            sb.append(card);
         }
         sb.append("\n<i>Продлить: «🔁 Продлить ключ» → </i><code>")
                 .append(keys.get(0).getId()).append(" 30</code> <i>(ID и дни)</i>");
+        out.add(htmlMessage(chatId, sb.toString()));
+        return out;
+    }
+
+    private static final java.time.format.DateTimeFormatter DATE_ONLY =
+            java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy");
+
+    private static SendMessage htmlMessage(Long chatId, String text) {
         return SendMessage.builder()
                 .chatId(chatId.toString())
-                .text(sb.toString())
+                .text(text)
                 .parseMode("HTML")
+                .disableWebPagePreview(true)
                 .build();
     }
 
