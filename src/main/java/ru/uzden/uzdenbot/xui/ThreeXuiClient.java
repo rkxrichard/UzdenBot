@@ -47,6 +47,15 @@ public class ThreeXuiClient {
     private volatile String authCookie;
     private final ReentrantLock loginLock = new ReentrantLock();
 
+    /**
+     * Опциональный статический API-токен (Bearer). Актуально для 3x-ui 3.x с CSRF-защитой,
+     * где логин по cookie (username/password) падает с "CSRF validation failed" ещё до того,
+     * как успевает выдать сессию — панель рассчитана на то, что программные клиенты ходят
+     * через Authorization: Bearer, минуя CSRF-мидлварь браузерных сессий. Если задан — вся
+     * cookie-логика (doLogin/ensureLoggedIn/relogin) просто выключается.
+     */
+    private final String apiToken;
+
     private static final String LOGIN_PATH = "/login";
     private static final String ADD_CLIENT_PATH = "/panel/api/inbounds/addClient";
 
@@ -69,6 +78,7 @@ public class ThreeXuiClient {
     public ThreeXuiClient(RestClient.Builder builder, XuiProperties props, ObjectMapper objectMapper) {
         this.props = props;
         this.objectMapper = objectMapper;
+        this.apiToken = (props.apiToken() == null || props.apiToken().isBlank()) ? null : props.apiToken().trim();
 
         // Нормализация конфига: часто base-url и base-path путают местами.
         String bu = Objects.requireNonNull(props.baseUrl(), "xui.base-url is required").trim();
@@ -491,6 +501,7 @@ public class ThreeXuiClient {
     /* ============================ auth ============================ */
 
     private void ensureLoggedIn() {
+        if (apiToken != null) return; // Bearer-токен — отдельной сессии/логина не требуется
         if (authCookie != null && !authCookie.isBlank()) return;
 
         loginLock.lock();
@@ -559,6 +570,11 @@ public class ThreeXuiClient {
      */
     private <T> T withSessionRetry(Supplier<T> call) {
         ensureLoggedIn();
+        if (apiToken != null) {
+            // Токен статичен: 401/403 здесь означает невалидный/отозванный токен,
+            // а не протухшую cookie-сессию — перелогиниваться нечем, просто пробрасываем.
+            return call.get();
+        }
         String cookieUsed = authCookie;
         try {
             return call.get();
@@ -599,37 +615,45 @@ public class ThreeXuiClient {
     }
 
     private String rawGetWithAuth(String path) {
-        return rest.get()
-                .uri(url(path))
-                .header(HttpHeaders.COOKIE, authCookie)
-                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header(HttpHeaders.REFERER, absolutePanelReferer())
-                .retrieve()
-                .body(String.class);
+        var spec = rest.get().uri(url(path))
+                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*");
+        if (apiToken != null) {
+            spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiToken);
+        } else {
+            spec.header(HttpHeaders.COOKIE, authCookie)
+                    .header("X-Requested-With", "XMLHttpRequest")
+                    .header(HttpHeaders.REFERER, absolutePanelReferer());
+        }
+        return spec.retrieve().body(String.class);
     }
 
     private String rawPostFormWithAuth(String path, MultiValueMap<String, String> form) {
-        return rest.post()
-                .uri(url(path))
-                .header(HttpHeaders.COOKIE, authCookie)
-                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header(HttpHeaders.REFERER, absolutePanelReferer())
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+        var spec = rest.post().uri(url(path))
+                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*");
+        if (apiToken != null) {
+            spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiToken);
+        } else {
+            spec.header(HttpHeaders.COOKIE, authCookie)
+                    .header("X-Requested-With", "XMLHttpRequest")
+                    .header(HttpHeaders.REFERER, absolutePanelReferer());
+        }
+        return spec.contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(form)
                 .retrieve()
                 .body(String.class);
     }
 
     private void rawPostJsonWithAuth(String path, String jsonBody) {
-        rest.post()
-                .uri(url(path))
-                .header(HttpHeaders.COOKIE, authCookie)
-                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*")
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header(HttpHeaders.REFERER, absolutePanelReferer())
-                .contentType(MediaType.APPLICATION_JSON)
+        var spec = rest.post().uri(url(path))
+                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*");
+        if (apiToken != null) {
+            spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiToken);
+        } else {
+            spec.header(HttpHeaders.COOKIE, authCookie)
+                    .header("X-Requested-With", "XMLHttpRequest")
+                    .header(HttpHeaders.REFERER, absolutePanelReferer());
+        }
+        spec.contentType(MediaType.APPLICATION_JSON)
                 .body(jsonBody)
                 .retrieve()
                 .toBodilessEntity();

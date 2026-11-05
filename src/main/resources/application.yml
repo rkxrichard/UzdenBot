@@ -91,6 +91,7 @@ xui:
   inbound-id: ${XUI_INBOUND_ID:1}
   xhttp-inbound-id: ${XUI_XHTTP_INBOUND_ID:2}
   subscription-inbound-ids: ${XUI_SUBSCRIPTION_INBOUND_IDS:1,2,3,4}
+  api-token: ${XUI_API_TOKEN:}
 
 xui-ru-eu:
   base-url: ${XUI_RU_EU_BASE_URL:}
@@ -98,6 +99,7 @@ xui-ru-eu:
   subscription-base-url: ${XUI_RU_EU_SUBSCRIPTION_BASE_URL:}
   username: ${XUI_RU_EU_USERNAME:}
   password: ${XUI_RU_EU_PASSWORD:}
+  api-token: ${XUI_RU_EU_API_TOKEN:}
   inbound-id: ${XUI_RU_EU_INBOUND_ID:0}
   xhttp-inbound-id: ${XUI_RU_EU_XHTTP_INBOUND_ID:0}
   subscription-inbound-ids: ${XUI_RU_EU_SUBSCRIPTION_INBOUND_IDS:0}

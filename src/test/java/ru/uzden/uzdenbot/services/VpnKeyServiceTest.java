@@ -37,7 +37,8 @@ class VpnKeyServiceTest {
                         "pass",
                         1L,
                         4L,
-                        List.of(1L, 4L)
+                        List.of(1L, 4L),
+                        null
                 ),
                 new RuEuXuiProperties(
                         "",
@@ -47,7 +48,8 @@ class VpnKeyServiceTest {
                         "",
                         0L,
                         0L,
-                        List.of()
+                        List.of(),
+                        null
                 ),
                 RestClient.builder(),
                 new ObjectMapper()

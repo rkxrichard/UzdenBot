@@ -13,7 +13,8 @@ public record RuEuXuiProperties(
         String password,
         long inboundId,
         long xhttpInboundId,
-        List<Long> subscriptionInboundIds
+        List<Long> subscriptionInboundIds,
+        String apiToken
 ) {
     public boolean configured() {
         return hasText(baseUrl)
@@ -31,7 +32,8 @@ public record RuEuXuiProperties(
                 password,
                 inboundId,
                 xhttpInboundId > 0 ? xhttpInboundId : inboundId,
-                subscriptionInboundIds
+                subscriptionInboundIds,
+                apiToken
         );
     }
 

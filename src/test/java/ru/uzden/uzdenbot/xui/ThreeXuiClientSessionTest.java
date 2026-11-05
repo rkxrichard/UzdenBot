@@ -61,7 +61,7 @@ class ThreeXuiClientSessionTest {
 
     private ThreeXuiClient client() {
         String base = "http://127.0.0.1:" + server.getAddress().getPort();
-        XuiProperties props = new XuiProperties(base, BASE_PATH, base + "/sub", "u", "p", 1, 0, List.of(1L));
+        XuiProperties props = new XuiProperties(base, BASE_PATH, base + "/sub", "u", "p", 1, 0, List.of(1L), null);
         return new ThreeXuiClient(RestClient.builder(), props, new ObjectMapper());
     }
 

@@ -13,5 +13,12 @@ public record XuiProperties(
         String password,
         long inboundId,
         long xhttpInboundId,
-        List<Long> subscriptionInboundIds
+        List<Long> subscriptionInboundIds,
+        /**
+         * Опциональный API-токен (Bearer) для панелей 3x-ui 3.x с CSRF-защитой,
+         * где логин по cookie (username/password) не проходит CSRF-мидлварь.
+         * Если задан — {@link ru.uzden.uzdenbot.xui.ThreeXuiClient} использует
+         * Authorization: Bearer вместо логина по cookie.
+         */
+        String apiToken
 ) {}
