@@ -344,6 +344,13 @@ public class VpnKeyService {
     }
 
     /**
+     * Все ключи, выпущенные обычными пользователями через бота (не созданные админом вручную).
+     */
+    public List<VpnKey> listUserCreatedKeys() {
+        return vpnKeyRepository.findByCreatedByAdminFalseOrderByCreatedAtDesc();
+    }
+
+    /**
      * Досоздаёт клиента для КАЖДОГО активного ключа на ВСЕХ подписочных inbound'ах бэкенда,
      * с которым тот ключ работает (текущий {@code XUI_SUBSCRIPTION_INBOUND_IDS} /
      * {@code RUEU_XUI_SUBSCRIPTION_INBOUND_IDS}). Нужно после добавления нового inbound'а

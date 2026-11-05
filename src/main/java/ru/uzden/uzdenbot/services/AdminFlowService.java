@@ -433,6 +433,63 @@ public class AdminFlowService {
     }
 
     /**
+     * Список ключей, выпущенных обычными пользователями через бота (покупка / «Создать ключ»
+     * в пользовательском меню) — в отличие от {@link #buildAdminKeysMessages}, который показывает
+     * только созданные админом вручную. Карточка: кто (username/telegram id), имя ключа (если есть),
+     * дата создания, текущий статус/подписка, ссылка tap-to-copy.
+     */
+    public List<SendMessage> buildUserKeysMessages(Long chatId) {
+        List<VpnKey> keys = vpnKeyService.listUserCreatedKeys();
+        if (keys.isEmpty()) {
+            return List.of(BotMessageFactory.simpleMessage(chatId, "Ключей, выпущенных пользователями, пока нет."));
+        }
+        final int limit = 3500;
+        List<SendMessage> out = new ArrayList<>();
+        StringBuilder sb = new StringBuilder("👥 <b>Ключи пользователей</b> · " + keys.size() + "\n"
+                + "<i>Нажмите на ссылку — она скопируется.</i>\n");
+        for (VpnKey key : keys) {
+            String card = "\n" + userKeyCard(key);
+            if (sb.length() + card.length() > limit) {
+                out.add(htmlMessage(chatId, sb.toString()));
+                sb = new StringBuilder();
+            }
+            sb.append(card);
+        }
+        out.add(htmlMessage(chatId, sb.toString()));
+        return out;
+    }
+
+    private String userKeyCard(VpnKey key) {
+        StringBuilder card = new StringBuilder("<blockquote><b>🆔 ").append(key.getId()).append("</b>");
+        String who = displayUser(key.getUser());
+        card.append(" · ").append(BotTextUtils.escapeHtml(who));
+        if (key.getName() != null && !key.getName().isBlank()) {
+            card.append(" · <b>").append(BotTextUtils.escapeHtml(key.getName())).append("</b>");
+        }
+        card.append("\n").append(adminKeyStatus(key));
+        card.append("\n🗓 Создан: ").append(BotTextUtils.formatDate(
+                java.time.LocalDateTime.ofInstant(key.getCreatedAt(), java.time.ZoneId.systemDefault())));
+        Optional<Subscription> sub = subscriptionService.getActiveSubscription(key);
+        if (sub.isPresent()) {
+            card.append("\n⏳ ").append(formatDaysLeft(subscriptionService.getDaysLeft(sub.get())))
+                    .append(" · до ").append(sub.get().getEndDate().toLocalDate().format(DATE_ONLY));
+        } else {
+            card.append("\n⌛ срок истёк / нет подписки");
+        }
+        card.append("</blockquote>");
+        String link = null;
+        try {
+            link = vpnKeyService.currentSubscriptionLink(key);
+        } catch (Exception e) {
+            log.warn("Не удалось собрать ссылку для ключа {}: {}", key.getId(), e.getMessage());
+        }
+        if (link != null) {
+            card.append("\n<code>").append(BotTextUtils.escapeHtml(link)).append("</code>\n");
+        }
+        return card.toString();
+    }
+
+    /**
      * Клиенты, добавленные вручную прямо в панели 3x-ui (не через бота) — у них нет строки
      * в БД, поэтому в основной список они не попадают. Показываем отдельным блоком, той же
      * ссылкой для копирования, чтобы их было видно и можно было проверить/отозвать в панели.

@@ -291,6 +291,11 @@ public class BotUpdateHandler {
                     out.addAll(adminFlowService.buildAdminKeysMessages(chatId));
                 }
             }
+            case "ADMIN_LIST_USER_KEYS" -> {
+                if (isAdmin) {
+                    out.addAll(adminFlowService.buildUserKeysMessages(chatId));
+                }
+            }
             case "ADMIN_REPLACE_KEY" -> {
                 if (isAdmin) {
                     out.add(adminFlowService.replaceAdminKeyPrompt(chatId));

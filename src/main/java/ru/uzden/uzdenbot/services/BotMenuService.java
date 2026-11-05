@@ -139,6 +139,10 @@ public class BotMenuService {
                 .text("📃 Созданные ключи")
                 .callbackData("ADMIN_LIST_KEYS")
                 .build();
+        InlineKeyboardButton bListUserKeys = InlineKeyboardButton.builder()
+                .text("👥 Ключи пользователей")
+                .callbackData("ADMIN_LIST_USER_KEYS")
+                .build();
         InlineKeyboardButton bReplaceAdminKey = InlineKeyboardButton.builder()
                 .text("♻️ Заменить ключ")
                 .callbackData("ADMIN_REPLACE_KEY")
@@ -198,6 +202,7 @@ public class BotMenuService {
                         List.of(bCreateAdminKey),
                         List.of(bRenewAdminKey),
                         List.of(bListAdminKeys),
+                        List.of(bListUserKeys),
                         List.of(bReplaceAdminKey, bReplaceAllAdminKeys),
                         List.of(bSyncInbounds),
                         List.of(bCreateReferralLink),

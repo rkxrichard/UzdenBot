@@ -126,4 +126,17 @@ public interface VpnKeyRepository extends JpaRepository<VpnKey, Long> {
      * Все ключи, созданные админом вручную (для листинга/продления в админ-панели), новые сверху.
      */
     List<VpnKey> findByCreatedByAdminTrueOrderByCreatedAtDesc();
+
+    /**
+     * Все ключи, выпущенные обычными пользователями через бота (кнопка «Создать ключ» / покупка),
+     * то есть НЕ созданные админом вручную. Join fetch пользователя — без этого
+     * {@code key.getUser().getUsername()} упадёт на lazy-инициализации вне транзакции.
+     */
+    @Query("""
+           select k from VpnKey k
+           join fetch k.user u
+           where k.createdByAdmin = false
+           order by k.createdAt desc
+           """)
+    List<VpnKey> findByCreatedByAdminFalseOrderByCreatedAtDesc();
 }
