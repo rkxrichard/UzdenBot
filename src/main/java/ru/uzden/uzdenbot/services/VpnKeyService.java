@@ -999,15 +999,14 @@ public class VpnKeyService {
 
     private String issueSubscriptionLink(BackendRuntime backend, VpnKey key) {
         String subId = subscriptionSubId(key.getClientUuid());
-        for (Long inboundId : clientInboundIds(backend, key.getInboundId())) {
+        List<Long> inboundIds = clientInboundIds(backend, key.getInboundId());
+        // Подчистим клиентов, созданных по старой per-inbound-схеме (после миграции со старой панели).
+        for (Long inboundId : inboundIds) {
             disableLegacyClientIfPresent(backend, inboundId, key.getClientUuid());
-            backend.client().addClient(
-                    inboundId,
-                    panelClientUuid(key.getClientUuid(), inboundId),
-                    panelClientEmail(key.getClientEmail(), inboundId),
-                    subId
-            );
         }
+        // 3x-ui 3.11.x: одна личность (базовый uuid/email/subId) привязывается сразу ко всем
+        // inbound'ам одним вызовом. Тот же subId отдельными вызовами панель не принимает.
+        backend.client().addClientMultiInbound(inboundIds, key.getClientUuid(), key.getClientEmail(), subId);
         return subscriptionProxyService.buildSubscriptionUrl(backend.backend(), subId);
     }
 
@@ -1038,7 +1037,7 @@ public class VpnKeyService {
         RuntimeException last = null;
         for (Long inboundId : clientInboundIds(backend, fallbackInbound)) {
             try {
-                backend.client().disableClient(inboundId, panelClientUuid(clientUuid, inboundId));
+                backend.client().disableClient(inboundId, clientUuid);
                 disableLegacyClientIfPresent(backend, inboundId, clientUuid);
             } catch (Exception e) {
                 last = new IllegalStateException("disable failed for inbound " + inboundId + ": " + safeMsg(e), e);

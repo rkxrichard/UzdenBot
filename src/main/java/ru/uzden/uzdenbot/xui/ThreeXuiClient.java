@@ -184,6 +184,44 @@ public class ThreeXuiClient {
         }
     }
 
+    /**
+     * Модель 3x-ui 3.11.x: один клиент (одна личность — email/subId) привязывается
+     * сразу к нескольким inbound'ам одним запросом POST /panel/api/clients/add с
+     * телом {"client":{...},"inboundIds":[...]}. Панель сама нормализует flow под
+     * транспорт каждого inbound'а (clientWithInboundFlow) и раскладывает
+     * id/password по протоколам (fillProtocolDefaults), поэтому слать один клиент
+     * со всеми полями безопасно. Тот же subId на отдельных вызовах панель
+     * отвергает ("subId already in use") — поэтому именно один вызов на все inbound'ы.
+     */
+    public void addClientMultiInbound(List<Long> inboundIds, UUID clientUuid, String email, String subId) {
+        if (inboundIds == null || inboundIds.isEmpty()) {
+            return;
+        }
+        ensureLoggedIn();
+
+        String clientObj = buildUniversalClientObjectJson(clientUuid.toString(), email, subId);
+
+        StringBuilder ids = new StringBuilder();
+        for (int i = 0; i < inboundIds.size(); i++) {
+            if (i > 0) ids.append(',');
+            ids.append(inboundIds.get(i));
+        }
+        String reqBody = "{\"client\":" + clientObj + ",\"inboundIds\":[" + ids + "]}";
+
+        String body = postJsonReturningWithAuth(CLIENTS_ADD_PATH, reqBody);
+        ApiEnvelope env = ApiEnvelope.parse(body);
+
+        if (!env.success) {
+            String msg = (env.msg == null ? body : env.msg);
+            String low = msg == null ? "" : msg.toLowerCase();
+            // Идемпотентность: такая личность уже существует (повторный выпуск того же ключа).
+            if (low.contains("already in use") || low.contains("duplicate")) {
+                return;
+            }
+            throw new IllegalStateException("3x-ui addClient failed: " + msg);
+        }
+    }
+
     public String buildSubscriptionUrl(String subId) {
         if (subId == null || subId.isBlank()) {
             throw new IllegalArgumentException("subId is required");
@@ -679,6 +717,27 @@ public class ThreeXuiClient {
         return "{"
                 + "\"id\":\"" + escapeJson(uuid) + "\","
                 + "\"flow\":\"" + escapeJson(flow) + "\","
+                + "\"email\":\"" + escapeJson(email) + "\","
+                + "\"limitIp\":0,"
+                + "\"totalGB\":0,"
+                + "\"expiryTime\":0,"
+                + "\"enable\":true,"
+                + "\"subId\":\"" + escapeJson(subId) + "\","
+                + "\"reset\":0"
+                + "}";
+    }
+
+    /**
+     * Единый объект клиента для привязки сразу к нескольким inbound'ам разных
+     * протоколов/транспортов. Задаём и id (vless/vmess), и password (trojan), и
+     * flow — панель при создании сама очистит flow там, где транспорт его не несёт,
+     * и возьмёт нужный идентификатор под протокол каждого inbound'а.
+     */
+    private static String buildUniversalClientObjectJson(String uuid, String email, String subId) {
+        return "{"
+                + "\"id\":\"" + escapeJson(uuid) + "\","
+                + "\"password\":\"" + escapeJson(uuid) + "\","
+                + "\"flow\":\"xtls-rprx-vision\","
                 + "\"email\":\"" + escapeJson(email) + "\","
                 + "\"limitIp\":0,"
                 + "\"totalGB\":0,"
