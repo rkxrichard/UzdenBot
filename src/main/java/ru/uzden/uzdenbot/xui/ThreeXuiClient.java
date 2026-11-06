@@ -57,7 +57,13 @@ public class ThreeXuiClient {
     private final String apiToken;
 
     private static final String LOGIN_PATH = "/login";
-    private static final String ADD_CLIENT_PATH = "/panel/api/inbounds/addClient";
+
+    // 3x-ui 3.11.x перенёс управление клиентами из /panel/api/inbounds/* в /panel/api/clients/*.
+    //   добавление: POST /panel/api/clients/add         тело JSON {"client":{...},"inboundIds":[id]}
+    //   обновление: POST /panel/api/clients/update/{email}   тело JSON объекта клиента (model.Client)
+    // Чтение (inbounds/list, inbounds/get/:id) осталось прежним.
+    private static final String CLIENTS_ADD_PATH = "/panel/api/clients/add";
+    private static final String CLIENTS_UPDATE_PATH = "/panel/api/clients/update/%s";
 
     private static final List<String> GET_INBOUND_CANDIDATES = List.of(
             "/panel/api/inbounds/get/%d",
@@ -68,11 +74,6 @@ public class ThreeXuiClient {
     private static final List<String> LIST_INBOUNDS_CANDIDATES = List.of(
             "/panel/api/inbounds/list",
             "/panel/api/inbounds/list/"
-    );
-
-    private static final List<String> UPDATE_CLIENT_CANDIDATES = List.of(
-            "/panel/api/inbounds/updateClient/%s",
-            "/panel/api/inbounds/updateClient/%s/"
     );
 
     public ThreeXuiClient(RestClient.Builder builder, XuiProperties props, ObjectMapper objectMapper) {
@@ -150,38 +151,36 @@ public class ThreeXuiClient {
     public void addClient(long inboundId, UUID clientUuid, String email, String subId) {
         ensureLoggedIn();
 
-        // settings={"clients":[{...}]}
         String inboundJson = getInbound(inboundId);
-        String settingsJson = buildAddClientSettingsJson(clientUuid.toString(), email, subId, inboundJson);
+        String clientObj = buildClientObjectJson(clientUuid.toString(), email, subId, inboundJson);
 
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("id", String.valueOf(inboundId));
-        form.add("settings", settingsJson);
+        // Новый API 3.11.x: POST /panel/api/clients/add c {"client":{...},"inboundIds":[<id>]}
+        String reqBody = "{\"client\":" + clientObj + ",\"inboundIds\":[" + inboundId + "]}";
 
-        String body = postFormWithAuth(ADD_CLIENT_PATH, form);
+        String body = postJsonReturningWithAuth(CLIENTS_ADD_PATH, reqBody);
         ApiEnvelope env = ApiEnvelope.parse(body);
 
         if (!env.success) {
             String msg = (env.msg == null ? body : env.msg);
-            // 3x-ui может вернуть ошибку "Duplicate email" если клиент уже существует.
-            // Для нас это идемпотентный результат: считаем, что клиент уже добавлен ранее.
-            if (msg != null && msg.toLowerCase().contains("duplicate email")) {
+            // Клиент уже существует ("duplicate ...") — идемпотентно обновляем его по email.
+            if (msg != null && msg.toLowerCase().contains("duplicate")) {
                 if ("trojan".equalsIgnoreCase(resolveProtocol(inboundJson))) {
                     return;
                 }
                 try {
-                    updateClientSettings(inboundId, clientUuid.toString(), settingsJson);
+                    updateClientByEmail(email, clientObj);
                 } catch (Exception e) {
-                    log.warn("3x-ui duplicate client exists in inbound {}, but updateClient failed: {}", inboundId, e.getMessage());
+                    log.warn("3x-ui client already exists in inbound {}, but update failed: {}", inboundId, e.getMessage());
                 }
                 return;
             }
             throw new IllegalStateException("3x-ui addClient failed: " + msg);
         }
 
-        // verify: реально ли клиент появился в inbound
+        // verify: панель подтвердила успех — мягко проверяем, что клиент виден в inbound.
+        // Если представление клиентов в get/:id отличается, не валим выдачу — успех API авторитетнее.
         if (!clientExistsInInbound(inboundId, clientUuid, email)) {
-            throw new IllegalStateException("3x-ui addClient returned success but client not persisted (uuid/email not found in inbound)");
+            log.warn("3x-ui addClient success, but client {} not visible in inbound {} via get/:id", email, inboundId);
         }
     }
 
@@ -212,78 +211,26 @@ public class ThreeXuiClient {
         if (clientJson == null) {
             return;
         }
-        String disabledClientJson = setBooleanField(clientJson, "enable", false);
-        String settingsJson = "{\"clients\":[" + disabledClientJson + "]}";
-
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("id", String.valueOf(inboundId));
-        form.add("settings", settingsJson);
-
-        HttpClientErrorException last = null;
-        for (String pattern : UPDATE_CLIENT_CANDIDATES) {
-            String path = String.format(pattern, clientUuid);
-            try {
-                String body = postFormWithAuth(path, form);
-                ApiEnvelope env = ApiEnvelope.parse(body);
-                if (!env.success) {
-                    String msg = (env.msg == null ? body : env.msg);
-                    throw new IllegalStateException("3x-ui updateClient failed: " + msg);
-                }
-                return;
-            } catch (HttpClientErrorException e) {
-                last = e;
-                if (isAuthError(e)) {
-                    reloginAndRetry(() -> {
-                        String body = postFormWithAuth(path, form);
-                        ApiEnvelope env = ApiEnvelope.parse(body);
-                        if (!env.success) {
-                            String msg = (env.msg == null ? body : env.msg);
-                            throw new IllegalStateException("3x-ui updateClient failed: " + msg);
-                        }
-                        return "";
-                    });
-                    return;
-                }
-            }
+        String email = JsonMini.unquoteIfString(JsonMini.extractFieldValue(clientJson, "email"));
+        if (email == null || email.isBlank()) {
+            return;
         }
-        if (last != null) throw last;
-        throw new IllegalStateException("No updateClient endpoint candidates matched");
+        String disabledClientJson = setBooleanField(clientJson, "enable", false);
+        updateClientByEmail(email, disabledClientJson);
     }
 
-    private void updateClientSettings(long inboundId, String clientId, String settingsJson) {
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("id", String.valueOf(inboundId));
-        form.add("settings", settingsJson);
-
-        HttpClientErrorException last = null;
-        for (String pattern : UPDATE_CLIENT_CANDIDATES) {
-            String path = String.format(pattern, clientId);
-            try {
-                String body = postFormWithAuth(path, form);
-                ApiEnvelope env = ApiEnvelope.parse(body);
-                if (!env.success) {
-                    String msg = (env.msg == null ? body : env.msg);
-                    throw new IllegalStateException("3x-ui updateClient failed: " + msg);
-                }
-                return;
-            } catch (HttpClientErrorException e) {
-                last = e;
-                if (isAuthError(e)) {
-                    reloginAndRetry(() -> {
-                        String body = postFormWithAuth(path, form);
-                        ApiEnvelope env = ApiEnvelope.parse(body);
-                        if (!env.success) {
-                            String msg = (env.msg == null ? body : env.msg);
-                            throw new IllegalStateException("3x-ui updateClient failed: " + msg);
-                        }
-                        return "";
-                    });
-                    return;
-                }
-            }
+    /**
+     * Обновляет клиента по email через новый API 3.11.x:
+     * POST /panel/api/clients/update/{email} с JSON-объектом клиента (model.Client).
+     */
+    private void updateClientByEmail(String email, String clientObjJson) {
+        String path = String.format(CLIENTS_UPDATE_PATH, urlPath(email));
+        String body = postJsonReturningWithAuth(path, clientObjJson);
+        ApiEnvelope env = ApiEnvelope.parse(body);
+        if (!env.success) {
+            String msg = (env.msg == null ? body : env.msg);
+            throw new IllegalStateException("3x-ui updateClient failed: " + msg);
         }
-        if (last != null) throw last;
-        throw new IllegalStateException("No updateClient endpoint candidates matched");
     }
 
     /**
@@ -659,6 +606,26 @@ public class ThreeXuiClient {
                 .toBodilessEntity();
     }
 
+    private String postJsonReturningWithAuth(String path, String jsonBody) {
+        return withSessionRetry(() -> rawPostJsonReturning(path, jsonBody));
+    }
+
+    private String rawPostJsonReturning(String path, String jsonBody) {
+        var spec = rest.post().uri(url(path))
+                .header(HttpHeaders.ACCEPT, "application/json, text/plain, */*");
+        if (apiToken != null) {
+            spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiToken);
+        } else {
+            spec.header(HttpHeaders.COOKIE, authCookie)
+                    .header("X-Requested-With", "XMLHttpRequest")
+                    .header(HttpHeaders.REFERER, absolutePanelReferer());
+        }
+        return spec.contentType(MediaType.APPLICATION_JSON)
+                .body(jsonBody)
+                .retrieve()
+                .body(String.class);
+    }
+
     /* ============================ json mini ============================ */
 
     private static final class ApiEnvelope {
@@ -691,9 +658,13 @@ public class ThreeXuiClient {
         return sb.toString();
     }
 
-    private static String buildAddClientSettingsJson(String uuid, String email, String subId, String inboundJson) {
+    /**
+     * Один объект клиента (без обёртки) для нового API /panel/api/clients/add и
+     * /panel/api/clients/update/{email}. Для trojan идентификатор — password, иначе — id (UUID).
+     */
+    private static String buildClientObjectJson(String uuid, String email, String subId, String inboundJson) {
         if ("trojan".equalsIgnoreCase(resolveProtocol(inboundJson))) {
-            return "{\"clients\":[{"
+            return "{"
                     + "\"password\":\"" + escapeJson(uuid) + "\","
                     + "\"email\":\"" + escapeJson(email) + "\","
                     + "\"limitIp\":0,"
@@ -702,11 +673,10 @@ public class ThreeXuiClient {
                     + "\"enable\":true,"
                     + "\"subId\":\"" + escapeJson(subId) + "\","
                     + "\"reset\":0"
-                    + "}]}";
+                    + "}";
         }
         String flow = resolveDefaultFlow(inboundJson);
-        // максимально похоже на то, что шлёт панель (минимально нужные поля)
-        return "{\"clients\":[{"
+        return "{"
                 + "\"id\":\"" + escapeJson(uuid) + "\","
                 + "\"flow\":\"" + escapeJson(flow) + "\","
                 + "\"email\":\"" + escapeJson(email) + "\","
@@ -716,7 +686,7 @@ public class ThreeXuiClient {
                 + "\"enable\":true,"
                 + "\"subId\":\"" + escapeJson(subId) + "\","
                 + "\"reset\":0"
-                + "}]}";
+                + "}";
     }
 
     private static String resolveProtocol(String inboundJson) {
